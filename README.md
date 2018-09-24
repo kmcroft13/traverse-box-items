@@ -9,7 +9,7 @@ Once complete, follow the steps below to run the script:
 2. Navigate to the downloaded directory: `cd traverse-box-items`
 3. Install dependencies: `npm install`
 4. Run the script: `node traverse-box-items-generic.js`
-5. View results in the `auditLogs` and `runtimeLogs` directories created in the script root directory
+5. View results in the console or in the newly created `auditLogs` and `runtimeLogs` directories in the script root directory
 
 The `modifySharedLinks.js` file is meant to serve as an example of how to implement custom User Defined Business Logic. It can be run as well (via `node modifySharedLinks.js`) but be sure the config `modifyData` flag is `false` unless you want all of your shared link access levels modified!
 
@@ -81,7 +81,7 @@ _**NOTE**: The `boxAppSettings` object in the config is structured slightly diff
     * **clientID** _[string]_: The `client ID` of your Box app.
     * **clientSecret** _[string]_: The `client secret` of your Box app.
     * **appAuth** _[object]_: Container object for Box app `appAuth` configurations.
-        * **privateKey** _[string]_: Your priovate key associated with your Box app.
+        * **privateKey** _[string]_: Your private key associated with your Box app.
         * **passphrase** _[string]_: The passphrase for your private key.
         * **keyID** _[string]_: The public key ID associated with your Box app and private key.
     * **enterpriseID** _[string]_: The Box enterprise ID where you authorized your app.
