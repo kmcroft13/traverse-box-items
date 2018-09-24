@@ -8,10 +8,10 @@ Once complete, follow the steps below to run the script:
 1. Clone or download this repository
 2. Navigate to the downloaded directory: `cd traverse-box-items`
 3. Install dependencies: `npm install`
-4. Run the script: `node ./traverse-box-items-generic.js`
+4. Run the script: `node traverse-box-items-generic.js`
 5. View results in the `auditLogs` and `runtimeLogs` directories created in the script root directory
 
-The `./modifySharedLinks.js` file is meant to serve as an example of how to implement custom User Defined Business Logic. It can be run as well (via `node ./modifySharedLinks.js`) but be sure the config `modifyData` flag is `false` unless you want all of your shared link access levels modified!
+The `modifySharedLinks.js` file is meant to serve as an example of how to implement custom User Defined Business Logic. It can be run as well (via `node modifySharedLinks.js`) but be sure the config `modifyData` flag is `false` unless you want all of your shared link access levels modified!
 
 # Features #
 Below is a summary of the features offered by this script:
@@ -58,6 +58,8 @@ The whitelist is an array of objects. Each object requires two elements: `ownerI
 * `followAllChildItems` is a boolean which specifies whether or not the whitelist should apply to all child items throughout an entire structure, or if the whitelist should only apply to the specified item and its immediate children. In technical terms, controls whether or not recursion is performed.
 
 # Config File #
+_**NOTE**: The `boxAppSettings` object in the config is structured slightly differently from the config file you may have downloaded from the Box Developer Console. Please copy values from your Box config file or elsewhere and paste into this structure directly._
+
 * **modifyData** _[boolean]_: Whether or not data should be modified at runtime (if implemented for custom User Defined Business Logic).
 * **auditTraversal** _[boolean]_: Whether or not items should be audit logged during traversal. Setting to true will output an audit log for each processed item.
 * **nonOwnedItems** _[object]_: Container object for non-owned item configurations.
