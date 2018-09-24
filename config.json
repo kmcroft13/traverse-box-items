@@ -1,0 +1,36 @@
+{
+  "modifyData": true,
+  "auditTraversal": true,
+  "nonOwnedItems": {
+    "skip": true,
+    "audit": false
+  },
+  "blacklist": {
+    "enabled": false,
+    "users": [""],
+    "folders": [""]
+  },
+  "whitelist": {
+    "enabled": false,
+    "items": [
+      {
+        "ownerID": "",
+        "folderIDs": [""],
+        "followAllChildItems": false
+      }
+    ]
+  },
+  "userDefinedConfigs": {
+  },
+  "boxItemFields": "id,name,type,created_at,modified_at,path_collection,shared_link,owned_by,size",
+  "boxAppSettings": {
+    "clientID": "YOUR_BOX_CLIENT_ID",
+    "clientSecret": "YOU_BOX_CLIENT_SECRET",
+    "appAuth": {
+      "privateKey": "YOUR_PRIVATE_KEY",
+      "passphrase": "YOUR_PRIVATE_KEY_PASSPHRASE",
+      "keyID": "YOUR_BOX_KEY_ID"
+    },
+    "enterpriseID": "YOUR_ENTERPRISE_ID"
+  }
+}
