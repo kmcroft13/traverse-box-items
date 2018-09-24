@@ -201,6 +201,13 @@ const sdk = new BoxSDK({
 
 
 ////  INITIALIZE LOGGING  /////////////////////////////////////////////////
+if (!fs.existsSync('./runtimeLogs')){
+    fs.mkdirSync('./runtimeLogs');
+}
+if (!fs.existsSync('./auditLogs')){
+    fs.mkdirSync('./auditLogs');
+}
+
 const logFormat = printf(info => {
   return `${info.timestamp}\t${info.level.toUpperCase()}\t${info.executionId}\t${info.label}\t${info.action.toUpperCase()}\t${info.message}\t${info.errorDetails ? `\t${info.errorDetails}` : ``}`;
 });
@@ -222,12 +229,12 @@ const logger = createLogger({
     ),
     transports: [
         new transports.Console({ level: 'debug', colorize: true }),
-        new transports.File({ filename: path.join('logs', '/scriptLog-error.log'), level: 'error' }),
-        new transports.File({ filename: path.join('logs', '/scriptLog-combined.log'), level: 'info' })
+        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-error.log'), level: 'error' }),
+        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-combined.log'), level: 'info' })
     ],
     exceptionHandlers: [
         new transports.Console(),
-        new transports.File({ filename: path.join('logs', '/scriptLog-exceptions.log') })
+        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-exceptions.log') })
     ]
 });
 
@@ -241,7 +248,7 @@ const auditor = createLogger({
     levels: customLogLevels.levels,
     transports: [
         new transports.Console({ level: 'action' }),
-        new transports.File({ filename: path.join('results', `/${datestring}_Results.csv`), level: 'action' })
+        new transports.File({ filename: path.join('auditLogs', `/${datestring}_Results.csv`), level: 'action' })
     ]
 });
 
