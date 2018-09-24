@@ -11,6 +11,8 @@ Once complete, follow the steps below to run the script:
 4. Run the script: `node ./traverse-box-items-generic.js`
 5. View results in the `auditLogs` and `runtimeLogs` directories created in the script root directory
 
+The `./modifySharedLinks.js` file is meant to serve as an example of how to implement custom User Defined Business Logic. It can be run as well (via `node ./modifySharedLinks.js`) but be sure the config `modifyData` flag is `false` unless you want all of your shared link access levels modified!
+
 # Features #
 Below is a summary of the features offered by this script:
 
