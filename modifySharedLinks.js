@@ -413,6 +413,7 @@ function getLinkAccess(sharedLinkObj) {
     return accessString
 }
 
+
 /* getFolderInfo()
  * param [object] client: Box API client for the user who owns the item
  * param [object] clientUserObj: Box user object associated with the client
@@ -467,7 +468,109 @@ async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
 }
 
 
+/* getEnterpriseUsers()
+ * param [string] client: Box API Service Account client to get users
+ * 
+ * returns [object] array of folder and file objects
+*/
+async function getEnterpriseUsers(client) {
+    let enterpriseUsers;
+    let allUsers = [];
+    let offset;
+    let totalCount;
+    try {
+        do {
+            enterpriseUsers = await client.enterprise.getUsers({
+                limit: 1000,
+                offset: offset,
+                user_type: client.enterprise.userTypes.MANAGED
+            });
+            
+            allUsers = allUsers.concat(enterpriseUsers.entries);
+            offset = enterpriseUsers.offset + enterpriseUsers.limit;
+            totalCount = enterpriseUsers.total_count;
+
+            logger.info({
+                label: "getEnterpriseUsers",
+                action: "RETREIVE_ENTERPRISE_USERS_PAGE",
+                executionId: "N/A",
+                message: `Retreived ${allUsers.length} of ${totalCount} enterprise users`
+            })
+        }
+        while(offset <= totalCount);
+    } catch(err) {
+        logError(err, "getEnterpriseUsers", `retreival of enterprise users`, "N/A")
+    }
+
+    logger.info({
+        label: "getEnterpriseUsers",
+        action: "RETREIVE_ENTERPRISE_USERS",
+        executionId: "N/A",
+        message: `Successfully retreived all enterprise users`
+    })
+    
+    return allUsers;
+}
+
+
 /* getFolderItems()
+ * param [string] client: Box API Service Account client to get users
+ * param [string] clientUserObj: Box user object associated with the client
+ * param [string] folderID: Folder ID to get items of
+ * param [string] parentExecutionID: Unique ID associated with a given execution loop
+ * 
+ * returns [object] array of folder and file objects
+*/
+async function getFolderItems(client, clientUserObj, folderID, parentExecutionID) {
+    let folderItems;
+    let allItems = [];
+    let offset;
+    let totalCount;
+    try {
+        do {
+            folderItems = await client.folders.getItems(folderID, {
+                fields: config.boxItemFields,
+                offset: offset,
+                limit: 1000
+            });
+            
+            allItems = allItems.concat(folderItems.entries);
+            offset = folderItems.offset + folderItems.limit;
+            totalCount = folderItems.total_count;
+
+            logger.info({
+                label: "getFolderItems",
+                action: "RETREIVE_FOLDER_ITEMS_PAGE",
+                executionId: parentExecutionID,
+                message: `Retreived ${allItems.length} of ${totalCount} folder items users`
+            })
+        }
+        while(offset <= totalCount);
+    } catch(err) {
+        logError(err, "getFolderItems", `retreival of child items for folder ${folderID}`, parentExecutionID)
+    }
+
+    if(folderID === '0') {
+        logger.info({
+            label: "processFolderItems",
+            action: "RETREIVE_ROOT_ITEMS",
+            executionId: parentExecutionID,
+            message: `Retreived root items for "${clientUserObj.name}" (${clientUserObj.id})`
+        })
+    } else {
+        logger.info({
+            label: "processFolderItems",
+            action: "RETREIVE_CHILD_ITEMS",
+            executionId: parentExecutionID,
+            message: `Retreived child items for folder ${folderID}`
+        })
+    }
+    
+    return allItems;
+}
+
+
+/* processFolderItems()
  * param [string] client: Box API client for the user who owns the item
  * param [string] clientUserObj: Box user object associated with the client
  * param [string] folderID: Folder ID to get items of
@@ -477,19 +580,17 @@ async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
  * 
  * returns [object] array of folder and file objects
 */
-
-//TODO: Handle folders with over 1000 items
-async function getFolderItems(client, clientUserObj, folderID, parentExecutionID, followChildItems = true, firstIteration = false) {
+async function processFolderItems(client, clientUserObj, folderID, parentExecutionID, followChildItems = true, firstIteration = false) {
     if(folderID === '0') {
         logger.info({
-            label: "getFolderItems",
+            label: "processFolderItems",
             action: "PREPARE_ROOT_ITEMS",
             executionId: parentExecutionID,
             message: `Beginning to traverse root items for "${clientUserObj.name}" (${clientUserObj.id})`
         })
     } else {
         logger.info({
-            label: "getFolderItems",
+            label: "processFolderItems",
             action: "PREPARE_CHILD_ITEMS",
             executionId: parentExecutionID,
             message: `Beginning to get child items for folder ${folderID}`
@@ -505,40 +606,15 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
     //Generate unique executionID for this loop
     const executionID = (Math.random()* 1e20).toString(36)
 
-    let items;
-    try {
-        items = await client.folders.getItems(folderID,
-        {
-            fields: config.boxItemFields,
-            offset: 0,
-            limit: 1000
-        })
+    //Get all items in folder
+    const items = await getFolderItems(client, clientUserObj, folderID, executionID);
 
-        if(folderID === '0') {
-            logger.info({
-                label: "getFolderItems",
-                action: "RETREIVE_ROOT_ITEMS",
-                executionId: executionID,
-                message: `Retreived root items for "${clientUserObj.name}" (${clientUserObj.id})`
-            })
-        } else {
-            logger.info({
-                label: "getFolderItems",
-                action: "RETREIVE_CHILD_ITEMS",
-                executionId: executionID,
-                message: `Retreived child items for folder ${folderID}`
-            })
-        }
-    } catch(err) {
-        logError(err, "getFolderItems", `retreival of child items for folder ${folderID}`, executionID)
-    }
-
-    items.entries.forEach(function (item) {
+    items.forEach(function (item) {
         //If getting root items, check if item is owned by the current user and if skip nonOwnedItems flag is true
         if(folderID === '0' && item.owned_by.id !== clientUserObj.id && config.nonOwnedItems.skip) {
             //Log item then skip it
             logger.debug({
-                label: "getFolderItems",
+                label: "processFolderItems",
                 action: "IGNORE_NONOWNED_ITEM",
                 executionId: executionID,
                 message: `Skipping ${item.type} "${item.name}" (${item.id}) owned by ${item.owned_by.login} (${item.owned_by.id})`
@@ -560,7 +636,7 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
         if(item.type === "folder" && config.blacklist.enabled && config.blacklist.folders.includes(item.id)) {
             //Log item then skip it
             logger.warn({
-                label: "getFolderItems",
+                label: "processFolderItems",
                 action: "IGNORE_BLACKLIST_ITEM",
                 executionId: executionID,
                 message: `Folder "${item.name}" (${item.id}) is included in configured blacklist - Ignoring`
@@ -584,7 +660,7 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
 
         //Only recurse if item is folder and if followChildItems is true
         if(item.type === "folder" && followChildItems) {
-            getFolderItems(client, clientUserObj, item.id, executionID);
+            processFolderItems(client, clientUserObj, item.id, executionID);
         }
     });
 
@@ -635,7 +711,7 @@ async function getUserItems(user, startingFolderID, followChildItems = true) {
             message: `Successfully retreived user info for "${userName}" (${userID}) - Proceeding with traversal on folder "${startingFolderID}"`
         })
         
-        getFolderItems(userClient, userInfo, startingFolderID, executionID, followChildItems, true);
+        processFolderItems(userClient, userInfo, startingFolderID, executionID, followChildItems, true);
     } catch(err) {
         logError(err, "getUserItems", `retreival of user info for user "${userName}" (${userID})`, executionID)
     }
@@ -664,41 +740,25 @@ async function index() {
             });
         };
     } else { //Whitelist not enabled, perform actions on all users (honoring blacklist)
-        //TODO: Handle enterprises with greater than 1000 users
-        let enterpriseUsers;
-        try{
-            enterpriseUsers = await serviceAccountClient.enterprise.getUsers({
-                limit: 1000,
-                offset: 0,
-                user_type: serviceAccountClient.enterprise.userTypes.MANAGED
-            });
+        //Get all enterprise users
+        const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
 
-            logger.info({
-                label: "index",
-                action: "RETREIVE_ENTERPRISE_USERS",
-                executionId: "N/A",
-                message: `Successfully retreived enterprise users`
-            })
-        } catch(err) {
-            logError(err, "index", "retreival of enterprise users", "N/A");
-        }
-
-        for (let i in enterpriseUsers.entries) {
+        for (let i in enterpriseUsers) {
             //Check if user is inncluded in blacklist
-            if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers.entries[i].id)) {
+            if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
                 //Log item then skip it
                 logger.warn({
                     label: "index",
                     action: "IGNORE_USER",
                     executionId: "N/A",
-                    message: `User "${enterpriseUsers.entries[i].name}" (${enterpriseUsers.entries[i].id}) is included in configured blacklist - Ignoring`
+                    message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) is included in configured blacklist - Ignoring`
                 })
 
                 continue;
             }
 
             const startingFolderID = '0';
-            getUserItems(enterpriseUsers.entries[i], startingFolderID)
+            getUserItems(enterpriseUsers[i], startingFolderID)
         };
     }
 }
