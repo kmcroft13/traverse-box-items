@@ -212,7 +212,15 @@ const serviceAccountClient = sdk.getAppAuthClient('enterprise', config.enterpris
  * returns none
 */
 function logError(err, functionName, failedEvent, executionID) {
-    if(err.response) {
+    if(err.response.statusCode === 429) {
+        logger.error({
+            label: functionName,
+            action: "BOX_RATE_LIMITED",
+            executionId: executionID,
+            message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
+            errorDetails: JSON.stringify(err.response)
+        });
+    } else if(err.response) {
         logger.error({
             label: functionName,
             action: "BOX_REQUEST_FAILED",
