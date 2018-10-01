@@ -20,7 +20,7 @@ Below is a summary of the features offered by this script:
 Out of the box this script will simply traverse all files, folders, and web links (ie. bookmarks) for all users in a Box instance. It will start by getting all users in the Box instance and then it will impersonnate each user to get the items they own. It will log all items to an audit CSV file for review.
 
 ## User Defined Business Logic ##
-During traversal the script will call a function `performUserDefinedActions` for each item processed. The script user can specify custom business logic in this function which will be evaluated for every item. This is useful if, for examplem, you need to modify shared link access levels or apply retention policies to items. You can see a sample implementation in the example file. The following data is available to you at function execution:
+During traversal the script will call a function `performUserDefinedActions` for each item processed. The script user can specify custom business logic in this function which will be evaluated for every item. This is useful if, for example, you need to modify shared link access levels or apply retention policies to items. You can see a sample implementation in the example file. The following data is available to you at function execution:
 
     client [object]: A Box API client associated with the user who owns the item
     clientUserObj [object]: A Box user object for the user associated with the client
@@ -52,9 +52,9 @@ The blacklist feature allows the user to configure specific users or folders to 
 
 ## Whitelist ##
 The whitelist feature allows the user to configure specific combinations of users and folders explicitly process. When the whitelist is enabled, no other items besides the ones explicitly configured will be processed. Items not included in the whitelist will not be processed and will not be included in the runtime logs or in audit event logs.
-The whitelist is an array of objects. Each object requires two elements: `ownerID` and `folderIDs`:
+The whitelist is an array of objects. Each object requires two elements: `ownerID` and `folderIDs`.
 * `ownerID` is a string representing the user ID for the user who owns the whitelisted folders.
-* `folderIDs` is an array representing the folder IDs which should be processed in the whitelist. All folder IDs within this array must be owned by the `ownerID` user defined above.
+* `folderIDs` is an array of strings representing the folder IDs which should be processed in the whitelist. All folder IDs within this array must be owned by the `ownerID` user defined above.
 * `followAllChildItems` is a boolean which specifies whether or not the whitelist should apply to all child items throughout an entire structure, or if the whitelist should only apply to the specified item and its immediate children. In technical terms, controls whether or not recursion is performed.
 
 # Config File #

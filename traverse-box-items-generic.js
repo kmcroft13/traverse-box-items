@@ -238,7 +238,7 @@ function logError(err, functionName, failedEvent, executionID) {
  * param [string] message: Additional details about the event
  * param [string] executionID: Unique ID associated with a given execution loop
  * 
- * returns NONE
+ * returns none
 */
 function logAudit(action, boxItemObj, message, executionID) {
     auditor.action({
