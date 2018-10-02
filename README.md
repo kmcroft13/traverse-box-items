@@ -29,7 +29,7 @@ During traversal the script will call a function `performUserDefinedActions` for
 
 ## Logging ##
 ### Audit Logging ###
-A `logAudit` functionb is exposes to write items to an audit CSV file which write actions the script performs. Audit logging is already implemented for basic traversal (and can be disable via config file). If adding custom User Defined Business Logic, you may also choose to audit your custom actions with this function. This function requires the following parameters:
+A `logAudit` function is exposed to write items to an audit CSV file which write actions the script performs. Audit logging is already implemented for basic traversal (and can be disable via config file). If adding custom User Defined Business Logic, you may also choose to audit your custom actions with this function. This function requires the following parameters:
 
     param [string] action: Action that is being audited
     param [object] boxItemObj: Box item object (folder, file, web_link)
