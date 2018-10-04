@@ -220,12 +220,20 @@ function logError(err, functionName, failedEvent, executionID) {
             message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
             errorDetails: JSON.stringify(err.response)
         });
-    } else if(err.response) {
+    } else if(err.response.body) {
         logger.error({
             label: functionName,
             action: "BOX_REQUEST_FAILED",
             executionId: executionID,
             message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
+            errorDetails: JSON.stringify(err.response)
+        });
+    } else if(err.response) {
+        logger.error({
+            label: functionName,
+            action: "REQUEST_FAILED",
+            executionId: executionID,
+            message: `${failedEvent} | Status: ${err.response.statusCode}`,
             errorDetails: JSON.stringify(err.response)
         });
     } else {
