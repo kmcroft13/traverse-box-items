@@ -386,7 +386,7 @@ async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
             message: `Retreived info for folder ${folderID}`
         })
     } catch(err) {
-        logError(err, "getFolderInfo", `retreival of info for folder ${folderID}`, executionID)
+        logError(err, "getFolderInfo", `retreival of info for folder ${folderID} owned by ${clientUserObj.id}`, executionID)
     }
     
     if(config.auditTraversal) {
@@ -485,7 +485,7 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
         }
         while(offset <= totalCount);
     } catch(err) {
-        logError(err, "getFolderItems", `retreival of child items for folder ${folderID}`, parentExecutionID)
+        logError(err, "getFolderItems", `retreival of child items for folder ${folderID} owned by ${clientUserObj.id}`, parentExecutionID)
     }
 
     if(folderID === '0') {
@@ -697,6 +697,19 @@ async function index() {
 
             const startingFolderID = '0';
             getUserItems(enterpriseUsers[i], startingFolderID)
+        };
+
+        //If user in inactive in Box
+        if(enterpriseUsers[i].status !== "active") {
+            //Log user then skip it
+            logger.warn({
+                label: "index",
+                action: "NON_ACTIVE_USER",
+                executionId: "N/A",
+                message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) has a non-active status - Ignoring`
+            })
+
+            continue;
         };
     }
 }
