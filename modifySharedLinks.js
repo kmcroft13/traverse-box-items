@@ -3,8 +3,8 @@
  * This script will traverse all items in a Box instance while honoring 
  * configurations for a whitelist or blacklist.
  * 
- * It also exposes a "performUserDefinedActions" function which allows for
- * custom business logic to be performed on each item retreived during traversal.
+ * A "performUserDefinedActions" function is also exposed which allows for
+ * custom business logic to be performed on each item retrieved during traversal.
  * 
  * All custom business logic should be defined in 
  * the "USER DEFINED LOGIC" section below.
@@ -126,12 +126,22 @@ async function modifySharedLink(client, itemObj, newAccessLevel, executionID) {
 
         logAudit(
             "SHARED_LINK_MODIFY",
-            itemObj,
+            newItem,
             `Modified link ${newItem.shared_link.url} from ${itemObj.shared_link.access.toUpperCase()} to ${newItem.shared_link.access.toUpperCase()}`, 
             executionID
         );
     } catch(err) {
-        logError(err, "modifySharedLink", `modification of shared link for ${itemObj.type} "${itemObj.id}"`, executionID)
+        if(err.response && err.response.statusCode === 429) {
+            logger.warn({
+                label: "modifySharedLink",
+                action: "ADD_RETRY_CACHE",
+                executionId: executionID,
+                message: `Request for ${itemObj.type} "${itemObj.id}" rate limited -- Adding to retry cache`
+            })
+            cache.push(`getItemInfo|file:${fileID}|user:${clientUserObj.id}`);
+        } else {
+            logError(err, "modifySharedLink", `modification of shared link for ${itemObj.type} "${itemObj.id}"`, executionID);
+        }
     }
 }
 
@@ -168,9 +178,17 @@ const BoxSDK = require('box-node-sdk');
 //Require modules from Winston (logging utility)
 const { createLogger, format, transports } = require('winston');
 const { combine, timestamp, label, printf } = format;
+//Require modules from 'node-csv' (CSV parser and creator)
+const parse = require('csv-parse/lib/sync');
+const stringify = require('csv-stringify');
+//Require linked list package for caching errors and initialize cache
+const LinkedList = require('linkedlist');
+const cache = new LinkedList();
 //Require node fs and path modules
 const fs = require('fs');
 const path = require('path');
+//Initialize user cache
+const userCache = {};
 
 
 ////  LOAD CONFIGURATIONS  ////////////////////////////////////////////////
@@ -183,10 +201,10 @@ try{
 } catch(err) {
     throw Error(`Could not read configuration file: ${err}`)
 }
-
-// Check for incompatible configurations
-if(config.blacklist.enabled && config.whitelist.enabled) {
-    throw Error(`Incompatible configuration: Cannot have blacklist and whitelist enabled at the same time"`)
+//Check for incompatible configurations
+if((config.csv.enabled && config.whitelist.enabled) || (config.csv.enabled && config.blacklist.enabled)) {
+    console.log(`\n\n=============== WARNING ===============\nThe "whitelist" and "blacklist" features cannot be used while the "CSV" feature is enabled.\nPlease either turn off the "CSV" feature or turn off both the "whitelist" and "blacklist" features and re-run the script to proceed.\n=======================================\n\n`)
+    process.exit(9);
 }
 
 // Initialize the Box SDK from config file
@@ -247,7 +265,6 @@ const auditor = createLogger({
     ),
     levels: customLogLevels.levels,
     transports: [
-        new transports.Console({ level: 'action' }),
         new transports.File({ filename: path.join('auditLogs', `/${datestring}_Results.csv`), level: 'action' })
     ]
 });
@@ -290,30 +307,32 @@ const serviceAccountClient = sdk.getAppAuthClient('enterprise', config.enterpris
  * returns none
 */
 function logError(err, functionName, failedEvent, executionID) {
-    if(err.response.statusCode === 429) {
-        logger.error({
-            label: functionName,
-            action: "BOX_RATE_LIMITED",
-            executionId: executionID,
-            message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
-            errorDetails: JSON.stringify(err.response)
-        });
-    } else if(err.response.body) {
-        logger.error({
-            label: functionName,
-            action: "BOX_REQUEST_FAILED",
-            executionId: executionID,
-            message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
-            errorDetails: JSON.stringify(err.response)
-        });
-    } else if(err.response) {
-        logger.error({
-            label: functionName,
-            action: "REQUEST_FAILED",
-            executionId: executionID,
-            message: `${failedEvent} | Status: ${err.response.statusCode}`,
-            errorDetails: JSON.stringify(err.response)
-        });
+    if(err.response) {
+        if(err.response.statusCode === 429) {
+            logger.error({
+                label: functionName,
+                action: "BOX_RATE_LIMITED",
+                executionId: executionID,
+                message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
+                errorDetails: JSON.stringify(err.response)
+            });
+        } else if(err.response.body) {
+            logger.error({
+                label: functionName,
+                action: "BOX_REQUEST_FAILED",
+                executionId: executionID,
+                message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
+                errorDetails: JSON.stringify(err.response)
+            });
+        } else {
+            logger.error({
+                label: functionName,
+                action: "REQUEST_FAILED",
+                executionId: executionID,
+                message: `${failedEvent} | Status: ${err.response.statusCode}`,
+                errorDetails: JSON.stringify(err.response)
+            });
+        }
     } else {
         logger.error({
             label: functionName,
@@ -332,7 +351,7 @@ function logError(err, functionName, failedEvent, executionID) {
  * param [string] message: Additional details about the event
  * param [string] executionID: Unique ID associated with a given execution loop
  * 
- * returns NONE
+ * returns none
 */
 function logAudit(action, boxItemObj, message, executionID) {
     auditor.action({
@@ -444,7 +463,7 @@ async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
         label: "getFolderInfo",
         action: "PREPARE_FOLDER_INFO",
         executionId: parentExecutionID,
-        message: `Getting info for starting folder ${folderID}`
+        message: `Getting info for folder ${folderID}`
     })
 
     //Generate unique executionID for this loop
@@ -459,28 +478,166 @@ async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
 
         logger.info({
             label: "getFolderInfo",
-            action: "RETREIVE_FOLDER_INFO",
+            action: "retrieve_FOLDER_INFO",
             executionId: executionID,
-            message: `Retreived info for folder ${folderID}`
+            message: `retrieved info for folder ${folderID}`
         })
-    } catch(err) {
-        logError(err, "getFolderInfo", `retreival of info for folder ${folderID} owned by ${clientUserObj.id}`, executionID)
-    }
+
+        if(config.auditTraversal) {
+            logAudit(
+                "GET_ITEM", 
+                item, 
+                `Successfully retrieved item`, 
+                executionID
+            );
+        }
     
-    if(config.auditTraversal) {
-        logAudit(
-            "GET_ITEM", 
-            item, 
-            `Successfully retreived item`, 
-            executionID
-        );
+        //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
+        //Pass item object to user defined functions
+        performUserDefinedActions(client, clientUserObj, item, executionID);
+    
+        return item;
+    } catch(err) {
+        if(err.response && err.response.statusCode === 429) {
+            logger.warn({
+                label: "getFolderInfo",
+                action: "ADD_RETRY_CACHE",
+                executionId: executionID,
+                message: `Request for folder "${folderID}" rate limited -- Adding to retry cache`
+            })
+            cache.push(`getItemInfo|folder:${folderID}|user:${clientUserObj.id}`);
+        } else {
+            logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${clientUserObj.id}`, executionID);
+        }
     }
+}
 
-    //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
-    //Pass item object to user defined functions
-    performUserDefinedActions(client, clientUserObj, item, executionID);
 
-    return item;
+/* getFileInfo()
+ * param [object] client: Box API client for the user who owns the item
+ * param [object] clientUserObj: Box user object associated with the client
+ * param [string] fileID: File ID to get info on
+ * param [string] parentExecutionID: Unique ID associated with a given execution loop
+ * 
+ * returns [object] Box file object for given file ID
+*/
+async function getFileInfo(client, clientUserObj, fileID, parentExecutionID) {
+
+    logger.info({
+        label: "getFileInfo",
+        action: "PREPARE_FILE_INFO",
+        executionId: parentExecutionID,
+        message: `Getting info for file ${fileID}`
+    })
+
+    //Generate unique executionID for this loop
+    const executionID = (Math.random()* 1e20).toString(36)
+
+    let item;
+    try {
+        item = await client.files.get(fileID,
+        {
+            fields: config.boxItemFields
+        })
+
+        logger.info({
+            label: "getFileInfo",
+            action: "RETRIEVE_FILE_INFO",
+            executionId: executionID,
+            message: `retrieved info for file ${fileID}`
+        })
+
+        if(config.auditTraversal) {
+            logAudit(
+                "GET_ITEM", 
+                item, 
+                `Successfully retrieved item`, 
+                executionID
+            );
+        }
+    
+        //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
+        //Pass item object to user defined functions
+        performUserDefinedActions(client, clientUserObj, item, executionID);
+    
+        return item;
+    } catch(err) {
+        if(err.response && err.response.statusCode === 429) {
+            logger.warn({
+                label: "getFileInfo",
+                action: "ADD_RETRY_CACHE",
+                executionId: executionID,
+                message: `Request for file "${fileID}" rate limited -- Adding to retry cache`
+            })
+            cache.push(`getItemInfo|file:${fileID}|user:${clientUserObj.id}`);
+        } else {
+            logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${clientUserObj.id}`, executionID);
+        }
+    }
+}
+
+
+/* getWeblinkInfo()
+ * param [object] client: Box API client for the user who owns the item
+ * param [object] clientUserObj: Box user object associated with the client
+ * param [string] weblinkID: File ID to get info on
+ * param [string] parentExecutionID: Unique ID associated with a given execution loop
+ * 
+ * returns [object] Box file object for given file ID
+*/
+async function getWeblinkInfo(client, clientUserObj, weblinkID, parentExecutionID) {
+
+    logger.info({
+        label: "getWeblinkInfo",
+        action: "PREPARE_WEBLINK_INFO",
+        executionId: parentExecutionID,
+        message: `Getting info for weblink ${weblinkID}`
+    })
+
+    //Generate unique executionID for this loop
+    const executionID = (Math.random()* 1e20).toString(36)
+
+    let item;
+    try {
+        item = await client.weblinks.get(weblinkID,
+        {
+            fields: config.boxItemFields
+        })
+
+        logger.info({
+            label: "getWeblinkInfo",
+            action: "RETRIEVE_WEBLINK_INFO",
+            executionId: executionID,
+            message: `retrieved info for weblink ${weblinkID}`
+        })
+
+        if(config.auditTraversal) {
+            logAudit(
+                "GET_ITEM", 
+                item, 
+                `Successfully retrieved item`, 
+                executionID
+            );
+        }
+    
+        //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
+        //Pass item object to user defined functions
+        performUserDefinedActions(client, clientUserObj, item, executionID);
+    
+        return item;
+    } catch(err) {
+        if(err.response && err.response.statusCode === 429) {
+            logger.warn({
+                label: "getWeblinkInfo",
+                action: "ADD_RETRY_CACHE",
+                executionId: executionID,
+                message: `Request for weblink "${weblinkID}" rate limited -- Adding to retry cache`
+            })
+            cache.push(`getItemInfo|web_link:${weblinkID}|user:${clientUserObj.id}`);
+        } else {
+            logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${clientUserObj.id}`, executionID);
+        }
+    }
 }
 
 
@@ -508,21 +665,21 @@ async function getEnterpriseUsers(client) {
 
             logger.info({
                 label: "getEnterpriseUsers",
-                action: "RETREIVE_ENTERPRISE_USERS_PAGE",
+                action: "retrieve_ENTERPRISE_USERS_PAGE",
                 executionId: "N/A",
-                message: `Retreived ${allUsers.length} of ${totalCount} enterprise users`
+                message: `retrieved ${allUsers.length} of ${totalCount} enterprise users`
             })
         }
         while(offset <= totalCount);
     } catch(err) {
-        logError(err, "getEnterpriseUsers", `retreival of enterprise users`, "N/A")
+        logError(err, "getEnterpriseUsers", `retrieval of enterprise users`, "N/A")
     }
 
     logger.info({
         label: "getEnterpriseUsers",
-        action: "RETREIVE_ENTERPRISE_USERS",
+        action: "retrieve_ENTERPRISE_USERS",
         executionId: "N/A",
-        message: `Successfully retreived all enterprise users`
+        message: `Successfully retrieved all enterprise users`
     })
     
     return allUsers;
@@ -556,30 +713,40 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
 
             logger.info({
                 label: "getFolderItems",
-                action: "RETREIVE_FOLDER_ITEMS_PAGE",
+                action: "retrieve_FOLDER_ITEMS_PAGE",
                 executionId: parentExecutionID,
-                message: `Retreived ${allItems.length} of ${totalCount} folder items users`
+                message: `retrieved ${allItems.length} of ${totalCount} items from folder ${folderID}`
             })
         }
         while(offset <= totalCount);
-    } catch(err) {
-        logError(err, "getFolderItems", `retreival of child items for folder ${folderID} owned by ${clientUserObj.id}`, parentExecutionID)
-    }
 
-    if(folderID === '0') {
-        logger.info({
-            label: "processFolderItems",
-            action: "RETREIVE_ROOT_ITEMS",
-            executionId: parentExecutionID,
-            message: `Retreived root items for "${clientUserObj.name}" (${clientUserObj.id})`
-        })
-    } else {
-        logger.info({
-            label: "processFolderItems",
-            action: "RETREIVE_CHILD_ITEMS",
-            executionId: parentExecutionID,
-            message: `Retreived child items for folder ${folderID}`
-        })
+        if(folderID === '0') {
+            logger.info({
+                label: "getFolderItems",
+                action: "retrieve_ROOT_ITEMS",
+                executionId: parentExecutionID,
+                message: `retrieved root items for "${clientUserObj.name}" (${clientUserObj.id})`
+            })
+        } else {
+            logger.info({
+                label: "getFolderItems",
+                action: "retrieve_CHILD_ITEMS",
+                executionId: parentExecutionID,
+                message: `retrieved child items for folder ${folderID}`
+            })
+        }
+    } catch(err) {
+        if(err.response && err.response.statusCode === 429) {
+            logger.warn({
+                label: "getFolderItems",
+                action: "ADD_RETRY_CACHE",
+                executionId: parentExecutionID,
+                message: `Request for folder "${folderID}" rate linmited -- Adding to retry cache`
+            })
+            cache.push(`getFolderItems|folder:${folderID}|user:${clientUserObj.id}`);
+        } else {
+            logError(err, "getFolderItems", `retrieval of child items for folder ${folderID} owned by ${clientUserObj.id}`, parentExecutionID);
+        }
     }
     
     return allItems;
@@ -625,22 +792,22 @@ async function processFolderItems(client, clientUserObj, folderID, parentExecuti
     //Get all items in folder
     const items = await getFolderItems(client, clientUserObj, folderID, executionID);
 
-    items.forEach(function (item) {
+    for (let i in items) {
         //If getting root items, check if item is owned by the current user and if skip nonOwnedItems flag is true
-        if(folderID === '0' && item.owned_by.id !== clientUserObj.id && config.nonOwnedItems.skip) {
+        if(folderID === '0' && items[i].owned_by.id !== clientUserObj.id && config.nonOwnedItems.skip) {
             //Log item then skip it
             logger.debug({
                 label: "processFolderItems",
                 action: "IGNORE_NONOWNED_ITEM",
                 executionId: executionID,
-                message: `Skipping ${item.type} "${item.name}" (${item.id}) owned by ${item.owned_by.login} (${item.owned_by.id})`
+                message: `Skipping ${items[i].type} "${items[i].name}" (${items[i].id}) owned by ${items[i].owned_by.login} (${items[i].owned_by.id})`
             })
 
             if(config.nonOwnedItems.audit) {
                 logAudit(
                     "SKIP_ITEM", 
-                    item, 
-                    `Successfully retreived skipped item`, 
+                    items[i], 
+                    `Successfully retrieved skipped item`, 
                     executionID
                 );
             }
@@ -649,13 +816,13 @@ async function processFolderItems(client, clientUserObj, folderID, parentExecuti
         }
 
         //If blacklist is enabled and if folder is included in blacklist
-        if(item.type === "folder" && config.blacklist.enabled && config.blacklist.folders.includes(item.id)) {
+        if(items[i].type === "folder" && config.blacklist.enabled && config.blacklist.folders.includes(items[i].id)) {
             //Log item then skip it
             logger.warn({
                 label: "processFolderItems",
                 action: "IGNORE_BLACKLIST_ITEM",
                 executionId: executionID,
-                message: `Folder "${item.name}" (${item.id}) is included in configured blacklist - Ignoring`
+                message: `Folder "${items[i].name}" (${items[i].id}) is included in configured blacklist - Ignoring`
             })
 
             return;
@@ -664,23 +831,21 @@ async function processFolderItems(client, clientUserObj, folderID, parentExecuti
         if(config.auditTraversal) {
             logAudit(
                 "GET_ITEM", 
-                item, 
-                `Successfully retreived item`, 
+                items[i], 
+                `Successfully retrieved item`, 
                 executionID
             );
         }
 
         //PERFORM USER DEFINED ACTION(S)
         //Pass item object to user defined functions
-        performUserDefinedActions(client, clientUserObj, item, executionID);
+        performUserDefinedActions(client, clientUserObj, items[i], executionID);
 
         //Only recurse if item is folder and if followChildItems is true
-        if(item.type === "folder" && followChildItems) {
-            processFolderItems(client, clientUserObj, item.id, executionID);
+        if(items[i].type === "folder" && followChildItems) {
+            processFolderItems(client, clientUserObj, items[i].id, executionID);
         }
-    });
-
-    return items.entries
+    };
 }
 
 
@@ -713,24 +878,182 @@ async function getUserItems(user, startingFolderID, followChildItems = true) {
         message: `Preparing to get items for "${userName}" (${userID}) on folder "${startingFolderID}"`
     })
     
-    //Get list of enterprise users
+    //Establish BoxSDK client for user
     const userClient = sdk.getAppAuthClient('user', userID);
 
     //Try to get user info to test access and authorization before traversal
     try{
         const userInfo = await userClient.users.get(userClient.CURRENT_USER_ID)
+        userCache[userInfo.id] = userInfo;
 
         logger.info({
             label: "getUserItems",
-            action: "RETREIVE_USER_INFO",
+            action: "retrieve_USER_INFO",
             executionId: executionID,
-            message: `Successfully retreived user info for "${userName}" (${userID}) - Proceeding with traversal on folder "${startingFolderID}"`
+            message: `Successfully retrieved user info for "${userName}" (${userID}) - Proceeding with traversal on folder "${startingFolderID}"`
         })
         
-        processFolderItems(userClient, userInfo, startingFolderID, executionID, followChildItems, true);
+        await processFolderItems(userClient, userInfo, startingFolderID, executionID, followChildItems, true);
     } catch(err) {
-        logError(err, "getUserItems", `retreival of user info for user "${userName}" (${userID})`, executionID)
+        logError(err, "getUserItems", `retrieval of user info for user "${userName}" (${userID})`, executionID)
     }
+}
+
+
+/* traverse()
+ * 
+ * returns none
+*/
+async function traverse() {
+    //Check if whitelist is enabled
+    if(config.csv.enabled) {
+        //Generate unique executionID for this loop
+        const executionID = (Math.random()* 1e20).toString(36);
+        //Read wave analysis CSV
+        const rawCsv = fs.readFileSync(`${config.csv.filePath}`, 'utf8');
+        //Parse wave analysis CSV to JSON
+        const parsedCsv = parse(rawCsv, {columns: true, skip_empty_lines: true, skip_lines_with_empty_values: true});
+        //Get all Enterprise users
+        const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
+    
+        for (row of parsedCsv) {
+            const boxUser = enterpriseUsers.filter( user => user.login === row.owner_login);
+
+            //If user in inactive in Box
+            if(boxUser[0].status !== "active") {
+                //Log user then skip it
+                logger.warn({
+                    label: "traverse",
+                    action: "NON_ACTIVE_USER",
+                    executionId: "N/A",
+                    message: `User "${boxUser[0].name}" (${boxUser[0].id}) has a non-active status - Ignoring ${row.type} ${row.item_id}`
+                })
+
+                continue;
+            };
+            
+            userCache[boxUser[0].id] = boxUser[0];
+    
+            logger.info({
+                label: "traverse",
+                action: "PARSE_CSV_ROW",
+                executionId: executionID,
+                message: `Processing ${row.type} "${row.item_id}" owned by ${row.owner_login}`
+            })
+    
+            const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
+    
+            if(row.type === "file") {
+                await getFileInfo(userClient, boxUser[0], row.item_id, executionID);
+            } else if (row.type === "folder") {
+                await getFolderInfo(userClient, boxUser[0], row.item_id, executionID);
+            } else { //web_link
+                await getWeblinkInfo(userClient, boxUser[0], row.item_id, executionID);
+            }
+    
+        }
+    } else if(config.whitelist.enabled) {
+        logger.info({
+            label: "traverse",
+            action: "WHITELIST",
+            executionId: "N/A",
+            message: `Preparing to iterate through whitelist`
+        })
+
+        async function loopThruWhitelist() {
+            //Loop through all items in whitelist
+            for (let i in config.whitelist.items) {
+                //Check if we should recurse through child items for this user's whitelist
+                for (let folderID in config.whitelist.items[i].folderIDs) {
+                    await getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems)
+                };
+            };
+        }
+        await loopThruWhitelist();
+    } else { //Whitelist not enabled, perform actions on all users (honoring blacklist)
+        //Get all enterprise users
+        const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
+
+        async function loopThruEnterpriseUsers(enterpriseUsers) {
+            for (let i in enterpriseUsers) {
+                //Check if user is included in blacklist
+                if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
+                    //Log item then skip it
+                    logger.warn({
+                        label: "traverse",
+                        action: "IGNORE_USER",
+                        executionId: "N/A",
+                        message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) is included in configured blacklist - Ignoring`
+                    })
+
+                    continue;
+                }
+
+                //If user in inactive in Box
+                if(enterpriseUsers[i].status !== "active") {
+                    //Log user then skip it
+                    logger.warn({
+                        label: "traverse",
+                        action: "NON_ACTIVE_USER",
+                        executionId: "N/A",
+                        message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) has a non-active status - Ignoring`
+                    })
+
+                    continue;
+                };
+
+                const startingFolderID = '0';
+                await getUserItems(enterpriseUsers[i], startingFolderID)
+            };
+        }
+        await loopThruEnterpriseUsers(enterpriseUsers);
+    }
+}
+
+
+/* processRetries()
+ * 
+ * returns none
+*/
+async function processRetries() {
+    do {
+        //Generate unique executionID for this loop
+        const executionID = (Math.random()* 1e20).toString(36);
+        const retryItem = cache.shift().split('|');
+        const action = retryItem[0];
+        const itemType = retryItem[1].split(':')[0];
+        const itemID = retryItem[1].split(':')[1];
+        const userID = retryItem[2].split(':')[1];
+
+        logger.info({
+            label: "processRetries",
+            action: "PREPARE_RETRY_ITEM",
+            executionId: executionID,
+            message: `Preparing to ${action} on folder ${itemID} for user ${userID} | Remaining cache size: ${cache.length}`
+        })
+
+        try{
+            const userClient = sdk.getAppAuthClient('user', userID);
+            const userInfo = userCache[userID];
+    
+            if(action === 'getFolderInfo') {
+                await getFolderInfo(userClient, userInfo, itemID, executionID);
+            } else if(action === 'getFolderItems') {
+                await processFolderItems(userClient, userInfo, itemID, executionID);
+            } else if(action === 'getItemInfo') {
+                if(itemType === "file") {
+                    await getFileInfo(userClient, userInfo, itemID, executionID);
+                } else if(itemType === "folder") {
+                    await getFolderInfo(userClient, userInfo, itemID, executionID);
+                } else if(itemType === "web_link") {
+                    await getWeblinkInfo(userClient, userInfo, itemID, executionID);
+                }
+            }
+        } catch(err) {
+            logError(err, "processRetries", `retrying ${action} on folder "${itemID}" for user "${userID}"`, executionID)
+        }
+    }
+    while (cache.length);
 }
 
 
@@ -739,71 +1062,78 @@ async function getUserItems(user, startingFolderID, followChildItems = true) {
  * returns none
 */
 async function index() {
-    //Check if whitelist is enabled
-    if(config.whitelist.enabled) {
-        logger.info({
-            label: "index",
-            action: "WHITELIST",
-            executionId: "N/A",
-            message: `Preparing to iterate through whitelist`
-        })
 
-        //Loop through all items in whitelist
-        for (let i in config.whitelist.items) {
-            //Check if we should recurse through child items for this user's whitelist
-            config.whitelist.items[i].folderIDs.forEach(function (folderID) {
-                getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems)
-            });
-        };
-    } else { //Whitelist not enabled, perform actions on all users (honoring blacklist)
-        //Get all enterprise users
-        const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
+    logger.info({
+        label: "index",
+        action: "BEGIN_TRAVERSE",
+        executionId: "N/A",
+        message: `Preparing to traverse`
+    })
 
-        for (let i in enterpriseUsers) {
-            //Check if user is included in blacklist
-            if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
-                //Log item then skip it
-                logger.warn({
-                    label: "index",
-                    action: "IGNORE_USER",
-                    executionId: "N/A",
-                    message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) is included in configured blacklist - Ignoring`
-                })
+    await traverse();
 
-                continue;
-            }
-            //If user in inactive in Box
-            if(enterpriseUsers[i].status !== "active") {
-                //Log user then skip it
-                logger.warn({
-                    label: "index",
-                    action: "NON_ACTIVE_USER",
-                    executionId: "N/A",
-                    message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) has a non-active status - Ignoring`
-                })
+    logger.info({
+        label: "index",
+        action: "END_TRAVERSE",
+        executionId: "N/A",
+        message: `Completed traverse`
+    })
 
-                continue;
-            };
+    logger.info({
+        label: "index",
+        action: "BEGIN_PROCESS_ERRORS",
+        executionId: "N/A",
+        message: `Preparing to process error cache`
+    })
 
-            const startingFolderID = '0';
-            getUserItems(enterpriseUsers[i], startingFolderID)
-        };
+    if(cache.length) {
+        await processRetries();
     }
+
+    logger.info({
+        label: "index",
+        action: "END_PROCESS_ERRORS",
+        executionId: "N/A",
+        message: `Completed processing error cache`
+    })
+
 }
 
-logger.debug({
-    label: "script root",
-    action: "START",
-    executionId: "N/A",
-    message: `Starting index()`
-});
+// Check for incompatible configurations
+if(config.whitelist.enabled && config.blacklist.enabled && config.blacklist.users) {
+    console.log('\n\n=============== WARNING ===============\nBlacklist users are ignored when both blacklist and whitelist are enabled together. Continuing automatically in 10 seconds...\n=======================================\n\n');
+    setTimeout(function () {
+        logger.debug({
+            label: "script root",
+            action: "START",
+            executionId: "N/A",
+            message: `Starting index()`
+        });
 
-// THIS IS WHERE THE MAGIC HAPPENS, PEOPLE
-index()
+        index();
 
-logger.debug({
-    label: "script root",
-    action: "COMPLETE",
-    executionId: "N/A",
-    message: `index() completed`
-});
+        logger.debug({
+            label: "script root",
+            action: "COMPLETE",
+            executionId: "N/A",
+            message: `index() completed`
+        });
+    }, 10000)
+} else {
+    logger.debug({
+        label: "script root",
+        action: "START",
+        executionId: "N/A",
+        message: `Starting index()`
+    });
+    
+    // THIS IS WHERE THE MAGIC HAPPENS, PEOPLE
+    index();
+    
+    logger.debug({
+        label: "script root",
+        action: "COMPLETE",
+        executionId: "N/A",
+        message: `index() completed`
+    });
+}
