@@ -1,5 +1,5 @@
 {
-  "modifyData": true,
+  "modifyData": false,
   "auditTraversal": true,
   "nonOwnedItems": {
     "skip": true,
