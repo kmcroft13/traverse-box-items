@@ -1,14 +1,13 @@
 ////  USER DEFINED LOGIC  /////////////////////////////////////////////////
 
 /* performUserDefinedActions()
- * param [object] client:
- * param [object] clientUserObj:
+ * param [string] ownerId:
  * param [object] itemObj:
  * param [string] parentExecutionID: 
  * 
  * returns none
 */
-async function performUserDefinedActions(client, clientUserObj, itemObj, parentExecutionID) { 
+async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) { 
     logger.debug({
         label: "performUserDefinedActions",
         action: "PREPARE_USER_DEFINED_ACTION",
@@ -18,6 +17,9 @@ async function performUserDefinedActions(client, clientUserObj, itemObj, parentE
 
     //Generate unique executionID for this loop
     const executionID = (Math.random()* 1e20).toString(36)
+    // Initialize variables for user object and user API client
+    const client = userCache[ownerId].client;
+    const clientUserObj = userCache[ownerId].info;
 
     const matchAccessLevel = config.userDefinedConfigs.matchSharedLinkAccessLevel;
     const newAccessLevel = config.userDefinedConfigs.newSharedLinkAccessLevel;

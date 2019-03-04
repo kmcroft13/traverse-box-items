@@ -22,18 +22,18 @@ const BoxSDK = require('box-node-sdk');
 //Require modules from Winston (logging utility)
 const { createLogger, format, transports } = require('winston');
 const { combine, timestamp, label, printf } = format;
-//Require modules from 'node-csv' (CSV parser and creator)
+//Require modules from 'node-csv' (CSV parser)
 const parse = require('csv-parse/lib/sync');
-const stringify = require('csv-stringify');
-//Require linked list package for caching errors and initialize cache
-const LinkedList = require('linkedlist');
-const cache = new LinkedList();
 //Require node fs and path modules
 const fs = require('fs');
 const path = require('path');
+//Require PQueue to control tasks
+const PQueue = require('p-queue');
+
+eval(fs.readFileSync('userDefinedLogic.js')+'');
+
 //Initialize user cache
 const userCache = {};
-
 
 ////  LOAD CONFIGURATIONS  ////////////////////////////////////////////////
 // Load JSON from script config file
@@ -153,19 +153,27 @@ const serviceAccountClient = sdk.getAppAuthClient('enterprise', config.enterpris
 function logError(err, functionName, failedEvent, executionID) {
     if(err.response) {
         if(err.response.statusCode === 429) {
-            logger.error({
+            logger.warn({
                 label: functionName,
                 action: "BOX_RATE_LIMITED",
                 executionId: executionID,
                 message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
                 errorDetails: JSON.stringify(err.response)
             });
-        } else if(err.response.body) {
+        } else if(err.response.body.code) {
             logger.error({
                 label: functionName,
                 action: "BOX_REQUEST_FAILED",
                 executionId: executionID,
                 message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
+                errorDetails: JSON.stringify(err.response)
+            });
+        } else if(err.response.body.error) {
+            logger.error({
+                label: functionName,
+                action: "BOX_REQUEST_FAILED",
+                executionId: executionID,
+                message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.error} | Message: ${err.response.body.error_description}`,
                 errorDetails: JSON.stringify(err.response)
             });
         } else {
@@ -294,14 +302,13 @@ function getLinkAccess(sharedLinkObj) {
 
 
 /* getFolderInfo()
- * param [object] client: Box API client for the user who owns the item
- * param [object] clientUserObj: Box user object associated with the client
+ * param [string] ownerId: User ID for the user who owns the item
  * param [string] folderID: Folder ID to get info on
  * param [string] parentExecutionID: Unique ID associated with a given execution loop
  * 
  * returns [object] Box folder object for given folder ID
 */
-async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID) {
+async function getFolderInfo(ownerId, folderID, parentExecutionID) {
 
     logger.info({
         label: "getFolderInfo",
@@ -315,14 +322,14 @@ async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
 
     let item;
     try {
-        item = await client.folders.get(folderID,
+        item = await userCache[ownerId].client.folders.get(folderID,
         {
             fields: config.boxItemFields
         })
 
         logger.info({
             label: "getFolderInfo",
-            action: "retrieve_FOLDER_INFO",
+            action: "RETRIEVE_FOLDER_INFO",
             executionId: executionID,
             message: `retrieved info for folder ${folderID}`
         })
@@ -338,34 +345,40 @@ async function getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        performUserDefinedActions(client, clientUserObj, item, executionID);
+        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(item, executionID) });
+        logger.debug({
+            label: "performUserDefinedActions",
+            action: "ADD_TO_QUEUE",
+            executionId: executionID,
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+        })
     
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logger.warn({
+            logError(err, "getFolderInfo", `Request for folder "${folderID}" rate limited -- Re-adding task to queue`, executionID);
+            userCache[ownerId].queue.add( async function() { await getFolderInfo(ownerId, folderID, parentExecutionID) });
+            logger.debug({
                 label: "getFolderInfo",
-                action: "ADD_RETRY_CACHE",
+                action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Request for folder "${folderID}" rate limited -- Adding to retry cache`
+                message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
             })
-            cache.push(`getItemInfo|folder:${folderID}|user:${clientUserObj.id}`);
         } else {
-            logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${clientUserObj.id}`, executionID);
+            logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${userCache[ownerId].info.id}`, executionID);
         }
     }
 }
 
 
 /* getFileInfo()
- * param [object] client: Box API client for the user who owns the item
- * param [object] clientUserObj: Box user object associated with the client
+ * param [string] ownerId: User ID for the user who owns the item
  * param [string] fileID: File ID to get info on
  * param [string] parentExecutionID: Unique ID associated with a given execution loop
  * 
  * returns [object] Box file object for given file ID
 */
-async function getFileInfo(client, clientUserObj, fileID, parentExecutionID) {
+async function getFileInfo(ownerId, fileID, parentExecutionID) {
 
     logger.info({
         label: "getFileInfo",
@@ -379,7 +392,7 @@ async function getFileInfo(client, clientUserObj, fileID, parentExecutionID) {
 
     let item;
     try {
-        item = await client.files.get(fileID,
+        item = await userCache[ownerId].client.files.get(fileID,
         {
             fields: config.boxItemFields
         })
@@ -402,34 +415,41 @@ async function getFileInfo(client, clientUserObj, fileID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        performUserDefinedActions(client, clientUserObj, item, executionID);
-    
+        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, item, executionID) });
+        logger.debug({
+            label: "performUserDefinedActions",
+            action: "ADD_TO_QUEUE",
+            executionId: executionID,
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+        })
+
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logger.warn({
+            logError(err, "getFileInfo", `Request for file "${fileID}" rate limited -- Re-adding task to queue`, executionID);
+            userCache[ownerId].queue.add( async function() { await getFileInfo(fileID, parentExecutionID) });
+            logger.debug({
                 label: "getFileInfo",
-                action: "ADD_RETRY_CACHE",
+                action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Request for file "${fileID}" rate limited -- Adding to retry cache`
+                message: `Added task for file ${fileID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
             })
-            cache.push(`getItemInfo|file:${fileID}|user:${clientUserObj.id}`);
         } else {
-            logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${clientUserObj.id}`, executionID);
+            logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${ownerId}`, executionID);
         }
     }
 }
 
 
 /* getWeblinkInfo()
- * param [object] client: Box API client for the user who owns the item
+ * param [string] ownerId: User ID for the user who owns the item
  * param [object] clientUserObj: Box user object associated with the client
  * param [string] weblinkID: File ID to get info on
  * param [string] parentExecutionID: Unique ID associated with a given execution loop
  * 
  * returns [object] Box file object for given file ID
 */
-async function getWeblinkInfo(client, clientUserObj, weblinkID, parentExecutionID) {
+async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
 
     logger.info({
         label: "getWeblinkInfo",
@@ -443,7 +463,7 @@ async function getWeblinkInfo(client, clientUserObj, weblinkID, parentExecutionI
 
     let item;
     try {
-        item = await client.weblinks.get(weblinkID,
+        item = await userCache[ownerId].client.weblinks.get(weblinkID,
         {
             fields: config.boxItemFields
         })
@@ -466,20 +486,27 @@ async function getWeblinkInfo(client, clientUserObj, weblinkID, parentExecutionI
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        performUserDefinedActions(client, clientUserObj, item, executionID);
-    
+        userCache[ownerId].queue.add( async function() { performUserDefinedActions(ownerId, item, executionID) });
+        logger.debug({
+            label: "performUserDefinedActions",
+            action: "ADD_TO_QUEUE",
+            executionId: executionID,
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+        })
+
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logger.warn({
+            logError(err, "getWeblinkInfo", `Request for weblink "${weblinkID}" rate limited -- Re-adding task to queue`, executionID);
+            userCache[ownerId].queue.add( async function() { await getWeblinkInfo(ownerId, weblinkID, parentExecutionID) });
+            logger.debug({
                 label: "getWeblinkInfo",
-                action: "ADD_RETRY_CACHE",
+                action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Request for weblink "${weblinkID}" rate limited -- Adding to retry cache`
+                message: `Added task for weblink ${weblinkID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
             })
-            cache.push(`getItemInfo|web_link:${weblinkID}|user:${clientUserObj.id}`);
         } else {
-            logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${clientUserObj.id}`, executionID);
+            logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${ownerId}`, executionID);
         }
     }
 }
@@ -509,7 +536,7 @@ async function getEnterpriseUsers(client) {
 
             logger.info({
                 label: "getEnterpriseUsers",
-                action: "retrieve_ENTERPRISE_USERS_PAGE",
+                action: "RETRIEVE_ENTERPRISE_USERS_PAGE",
                 executionId: "N/A",
                 message: `retrieved ${allUsers.length} of ${totalCount} enterprise users`
             })
@@ -521,7 +548,7 @@ async function getEnterpriseUsers(client) {
 
     logger.info({
         label: "getEnterpriseUsers",
-        action: "retrieve_ENTERPRISE_USERS",
+        action: "RETRIEVE_ENTERPRISE_USERS",
         executionId: "N/A",
         message: `Successfully retrieved all enterprise users`
     })
@@ -531,21 +558,20 @@ async function getEnterpriseUsers(client) {
 
 
 /* getFolderItems()
- * param [string] client: Box API Service Account client to get users
- * param [string] clientUserObj: Box user object associated with the client
+ * param [string] ownerId: User ID for the user who owns the item
  * param [string] folderID: Folder ID to get items of
  * param [string] parentExecutionID: Unique ID associated with a given execution loop
  * 
  * returns [object] array of folder and file objects
 */
-async function getFolderItems(client, clientUserObj, folderID, parentExecutionID) {
+async function getFolderItems(ownerId, folderID, parentExecutionID) {
     let folderItems;
     let allItems = [];
     let offset;
     let totalCount;
     try {
         do {
-            folderItems = await client.folders.getItems(folderID, {
+            folderItems = await userCache[ownerId].client.folders.getItems(folderID, {
                 fields: config.boxItemFields,
                 offset: offset,
                 limit: 1000
@@ -557,9 +583,9 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
 
             logger.info({
                 label: "getFolderItems",
-                action: "retrieve_FOLDER_ITEMS_PAGE",
+                action: "RETRIEVE_FOLDER_ITEMS_PAGE",
                 executionId: parentExecutionID,
-                message: `retrieved ${allItems.length} of ${totalCount} items from folder ${folderID}`
+                message: `Retrieved ${allItems.length} of ${totalCount} items from folder ${folderID}`
             })
         }
         while(offset <= totalCount);
@@ -567,30 +593,22 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
         if(folderID === '0') {
             logger.info({
                 label: "getFolderItems",
-                action: "retrieve_ROOT_ITEMS",
+                action: "RETRIEVE_ROOT_ITEMS",
                 executionId: parentExecutionID,
-                message: `retrieved root items for "${clientUserObj.name}" (${clientUserObj.id})`
+                message: `Retrieved ${allItems.length} of ${totalCount} root items for "${userCache[ownerId].info.name}" (${userCache[ownerId].info.id})`
             })
         } else {
             logger.info({
                 label: "getFolderItems",
-                action: "retrieve_CHILD_ITEMS",
+                action: "RETRIEVE_CHILD_ITEMS",
                 executionId: parentExecutionID,
-                message: `retrieved child items for folder ${folderID}`
+                message: `Retrieved ${allItems.length} of ${totalCount} child items for folder ${folderID}`
             })
         }
     } catch(err) {
-        if(err.response && err.response.statusCode === 429) {
-            logger.warn({
-                label: "getFolderItems",
-                action: "ADD_RETRY_CACHE",
-                executionId: parentExecutionID,
-                message: `Request for folder "${folderID}" rate linmited -- Adding to retry cache`
-            })
-            cache.push(`getFolderItems|folder:${folderID}|user:${clientUserObj.id}`);
-        } else {
-            logError(err, "getFolderItems", `retrieval of child items for folder ${folderID} owned by ${clientUserObj.id}`, parentExecutionID);
-        }
+        //Need to throw error here so that it propogates up to next try/catch
+        logError(err, "getFolderItems", `Retrieval of child items for folder ${folderID} owned by ${userCache[ownerId].info.id}`, parentExecutionID);
+        throw Error(`Retrieval of child items for folder ${folderID} owned by ${userCache[ownerId].info.id} failed`);
     }
     
     return allItems;
@@ -598,8 +616,7 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
 
 
 /* processFolderItems()
- * param [string] client: Box API client for the user who owns the item
- * param [string] clientUserObj: Box user object associated with the client
+ * param [string] ownerId: User ID for the user who owns the item
  * param [string] folderID: Folder ID to get items of
  * param [string] parentExecutionID: Unique ID associated with a given execution loop
  * param [boolean] (Optional; Default = true) followChildItems: Identifies whether or not recursion should occur
@@ -607,38 +624,64 @@ async function getFolderItems(client, clientUserObj, folderID, parentExecutionID
  * 
  * returns [object] array of folder and file objects
 */
-async function processFolderItems(client, clientUserObj, folderID, parentExecutionID, followChildItems = true, firstIteration = false) {
+async function processFolderItems(ownerId, folderID, parentExecutionID, followChildItems = true, firstIteration = false) {
+    //Generate unique executionID for this loop
+    const executionID = (Math.random()* 1e20).toString(36)
+    
     if(folderID === '0') {
         logger.info({
             label: "processFolderItems",
             action: "PREPARE_ROOT_ITEMS",
-            executionId: parentExecutionID,
-            message: `Beginning to traverse root items for "${clientUserObj.name}" (${clientUserObj.id})`
+            executionId: `${executionID} | Parent: ${parentExecutionID}`,
+            message: `Beginning to traverse root items for "${userCache[ownerId].info.name}" (${userCache[ownerId].info.id})`
         })
     } else {
         logger.info({
             label: "processFolderItems",
             action: "PREPARE_CHILD_ITEMS",
-            executionId: parentExecutionID,
+            executionId: `${executionID} | Parent: ${parentExecutionID}`,
             message: `Beginning to get child items for folder ${folderID}`
         })
+    }
+
+    //Get all items in folder
+    let items;
+    try {
+        items = await getFolderItems(ownerId, folderID, executionID);
+    } catch(err) {
+        logError(err, "processFolderItems", `Error retrieving folder items -- Re-adding task to queue`, executionID);
+        userCache[ownerId].queue.add( async function() { await processFolderItems(ownerId, folderID, parentExecutionID, followChildItems, firstIteration) });
+        logger.debug({
+            label: "processFolderItems",
+            action: "ADD_TO_QUEUE",
+            executionId: executionID,
+            message: `Added task to process items for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+        })
+        logger.warn({
+            label: "processFolderItems",
+            action: "KILL_TASK",
+            executionId: executionID,
+            message: `Stopping task due to propogated error`
+        })
+
+        return;
     }
 
     //If this is the first iteration and not the root folder, take action on starting folder itself
     //This only applies if using whitelist configuration!
     if(firstIteration && folderID !== '0') {
-        getFolderInfo(client, clientUserObj, folderID, parentExecutionID)
+        userCache[ownerId].queue.add( async function() { await getFolderInfo(ownerId, folderID, executionID) });
+        logger.debug({
+            label: "getFolderInfo",
+            action: "ADD_TO_QUEUE",
+            executionId: `${executionID} | Parent: ${parentExecutionID}`,
+            message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+        })
     }
-
-    //Generate unique executionID for this loop
-    const executionID = (Math.random()* 1e20).toString(36)
-
-    //Get all items in folder
-    const items = await getFolderItems(client, clientUserObj, folderID, executionID);
 
     for (let i in items) {
         //If getting root items, check if item is owned by the current user and if skip nonOwnedItems flag is true
-        if(folderID === '0' && items[i].owned_by.id !== clientUserObj.id && config.nonOwnedItems.skip) {
+        if(folderID === '0' && items[i].owned_by.id !== ownerId && config.nonOwnedItems.skip) {
             //Log item then skip it
             logger.debug({
                 label: "processFolderItems",
@@ -656,7 +699,7 @@ async function processFolderItems(client, clientUserObj, folderID, parentExecuti
                 );
             }
 
-            return;
+            continue;
         }
 
         //If blacklist is enabled and if folder is included in blacklist
@@ -669,7 +712,7 @@ async function processFolderItems(client, clientUserObj, folderID, parentExecuti
                 message: `Folder "${items[i].name}" (${items[i].id}) is included in configured blacklist - Ignoring`
             })
 
-            return;
+            continue;
         }
 
         if(config.auditTraversal) {
@@ -683,13 +726,27 @@ async function processFolderItems(client, clientUserObj, folderID, parentExecuti
 
         //PERFORM USER DEFINED ACTION(S)
         //Pass item object to user defined functions
-        performUserDefinedActions(client, clientUserObj, items[i], executionID);
+        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, items[i], executionID) });
+        logger.debug({
+            label: "performUserDefinedActions",
+            action: "ADD_TO_QUEUE",
+            executionId: executionID,
+            message: `Added task for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+        })
 
         //Only recurse if item is folder and if followChildItems is true
         if(items[i].type === "folder" && followChildItems) {
-            processFolderItems(client, clientUserObj, items[i].id, executionID);
+            userCache[ownerId].queue.add( async function() { return await processFolderItems(ownerId, items[i].id, executionID) });
+            logger.debug({
+                label: "processFolderItems",
+                action: "ADD_TO_QUEUE",
+                executionId: executionID,
+                message: `Added task to process items for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+            })
         }
     };
+
+    return
 }
 
 
@@ -700,18 +757,7 @@ async function processFolderItems(client, clientUserObj, folderID, parentExecuti
  * 
  * returns none
 */
-async function getUserItems(user, startingFolderID, followChildItems = true) {
-    //Normalize input user info
-    let userName;
-    let userID;
-    if(typeof user === "object") {
-        userName = user.name;
-        userID = user.id;
-    } else {
-        userName = "UNKNOWN";
-        userID = user;
-    }
-
+async function getUserItems(userId, startingFolderID, followChildItems = true) {
     //Generate a unique execution ID to track loop execution across functions
     const executionID = (Math.random()* 1e20).toString(36)
 
@@ -719,27 +765,54 @@ async function getUserItems(user, startingFolderID, followChildItems = true) {
         label: "getUserItems",
         action: "PREPARE_GET_ITEMS",
         executionId: executionID,
-        message: `Preparing to get items for "${userName}" (${userID}) on folder "${startingFolderID}"`
+        message: `Preparing to get items for user ${userId} on folder "${startingFolderID}"`
     })
     
     //Establish BoxSDK client for user
-    const userClient = sdk.getAppAuthClient('user', userID);
+    const userClient = sdk.getAppAuthClient('user', userId);
 
     //Try to get user info to test access and authorization before traversal
     try{
         const userInfo = await userClient.users.get(userClient.CURRENT_USER_ID)
-        userCache[userInfo.id] = userInfo;
+
+        userCache[userInfo.id] = { 
+            queue: new PQueue({interval: 1000, intervalCap: 16, carryoverConcurrencyCount: false}),
+            client: userClient,
+            info: userInfo
+        };
+
+        userCache[userInfo.id].queue.onIdle().then(() => {
+            logger.info({
+                label: "traverse",
+                action: "FINISHED_TASK_QUEUE",
+                executionId: userInfo.id,
+                message: `All tasks processed for "${userInfo.name}" (${userInfo.id}) - Closing queue`
+            })
+        });
 
         logger.info({
             label: "getUserItems",
-            action: "retrieve_USER_INFO",
+            action: "RETRIEVE_USER_INFO",
             executionId: executionID,
-            message: `Successfully retrieved user info for "${userName}" (${userID}) - Proceeding with traversal on folder "${startingFolderID}"`
+            message: `Successfully retrieved user info for "${userInfo.name}" (${userInfo.id})`
+        })
+
+        logger.info({
+            label: "traverse",
+            action: "INITIALIZE_TASK_QUEUE",
+            executionId: userInfo.id,
+            message: `Successfully initialized a task queue for "${userInfo.name}" (${userInfo.id})`
         })
         
-        await processFolderItems(userClient, userInfo, startingFolderID, executionID, followChildItems, true);
+        userCache[userInfo.id].queue.add( async function() { return await processFolderItems(userInfo.id, startingFolderID, executionID, followChildItems, true) } );
+        logger.debug({
+            label: "processFolderItems",
+            action: "ADD_TO_QUEUE",
+            executionId: executionID,
+            message: `Added task to process items for folder ${startingFolderID} | Queue ${userInfo.id} size: ${userCache[userInfo.id].queue.size}`
+        })
     } catch(err) {
-        logError(err, "getUserItems", `retrieval of user info for user "${userName}" (${userID})`, executionID)
+        logError(err, "getUserItems", `Retrieval of user info for user "${userId}"`, executionID)
     }
 }
 
@@ -775,8 +848,6 @@ async function traverse() {
 
                 continue;
             };
-            
-            userCache[boxUser[0].id] = boxUser[0];
     
             logger.info({
                 label: "traverse",
@@ -787,12 +858,52 @@ async function traverse() {
     
             const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
     
+            userCache[boxUser[0].id] = { 
+                queue: new PQueue({interval: 1000, intervalCap: 16, carryoverConcurrencyCount: false}),
+                client: userClient,
+                info: boxUser[0]
+            };
+
+            logger.info({
+                label: "traverse",
+                action: "INITIALIZE_TASK_QUEUE",
+                executionId: userInfo.id,
+                message: `Successfully initialized a task queue for "${boxUser[0].name}" (${boxUser[0].id})`
+            })
+
+            userCache[boxUser[0].id].queue.onIdle().then(() => {
+                logger.info({
+                    label: "traverse",
+                    action: "FINISHED_TASK_QUEUE",
+                    executionId: userInfo.id,
+                    message: `All tasks processed for "${userInfo.name}" (${userInfo.id}) - Closing this queue`
+                })
+            });
+
             if(row.type === "file") {
-                await getFileInfo(userClient, boxUser[0], row.item_id, executionID);
+                userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(userClient, boxUser[0], row.item_id, executionID) });
+                logger.debug({
+                    label: "getFileInfo",
+                    action: "ADD_TO_QUEUE",
+                    executionId: executionID,
+                    message: `Added task for ${row.type} ${row.item_id} | Queue ${ownerId} size: ${userCache[boxUser[0].id].queue.size}`
+                })
             } else if (row.type === "folder") {
-                await getFolderInfo(userClient, boxUser[0], row.item_id, executionID);
+                userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(userClient, boxUser[0], row.item_id, executionID) });
+                logger.debug({
+                    label: "getFileInfo",
+                    action: "ADD_TO_QUEUE",
+                    executionId: executionID,
+                    message: `Added task for ${row.type} ${row.item_id} | Queue ${ownerId} size: ${userCache[boxUser[0].id].queue.size}`
+                })
             } else { //web_link
-                await getWeblinkInfo(userClient, boxUser[0], row.item_id, executionID);
+                userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(userClient, boxUser[0], row.item_id, executionID) });
+                logger.debug({
+                    label: "getFileInfo",
+                    action: "ADD_TO_QUEUE",
+                    executionId: executionID,
+                    message: `Added task for ${row.type} ${row.item_id} | Queue ${ownerId} size: ${userCache[boxUser[0].id].queue.size}`
+                })
             }
     
         }
@@ -804,180 +915,93 @@ async function traverse() {
             message: `Preparing to iterate through whitelist`
         })
 
-        async function loopThruWhitelist() {
-            //Loop through all items in whitelist
-            for (let i in config.whitelist.items) {
-                //Check if we should recurse through child items for this user's whitelist
-                for (let folderID in config.whitelist.items[i].folderIDs) {
-                    await getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems)
-                };
+        for (let i in config.whitelist.items) {
+            //Check if we should recurse through child items for this user's whitelist
+            for (let folderID in config.whitelist.items[i].folderIDs) {
+                getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems)
+                logger.info({
+                    label: "traverse",
+                    action: "CREATED_TRAVERSAL_TASK",
+                    executionId: "N/A",
+                    message: `Created a traversal task for folder ${folderId} owned by ${config.whitelist.items[i].ownerID})`
+                })
             };
         }
-        await loopThruWhitelist();
+
     } else { //Whitelist not enabled, perform actions on all users (honoring blacklist)
         //Get all enterprise users
         const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
 
-        async function loopThruEnterpriseUsers(enterpriseUsers) {
-            for (let i in enterpriseUsers) {
-                //Check if user is included in blacklist
-                if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
-                    //Log item then skip it
-                    logger.warn({
-                        label: "traverse",
-                        action: "IGNORE_USER",
-                        executionId: "N/A",
-                        message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) is included in configured blacklist - Ignoring`
-                    })
 
-                    continue;
-                }
+        for (let i in enterpriseUsers) {
+            //Check if user is included in blacklist
+            if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
+                //Log item then skip it
+                logger.warn({
+                    label: "traverse",
+                    action: "IGNORE_USER",
+                    executionId: "N/A",
+                    message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) is included in configured blacklist - Ignoring`
+                })
 
-                //If user in inactive in Box
-                if(enterpriseUsers[i].status !== "active") {
-                    //Log user then skip it
-                    logger.warn({
-                        label: "traverse",
-                        action: "NON_ACTIVE_USER",
-                        executionId: "N/A",
-                        message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) has a non-active status - Ignoring`
-                    })
-
-                    continue;
-                };
-
-                const startingFolderID = '0';
-                await getUserItems(enterpriseUsers[i], startingFolderID)
-            };
-        }
-        await loopThruEnterpriseUsers(enterpriseUsers);
-    }
-}
-
-
-/* processRetries()
- * 
- * returns none
-*/
-async function processRetries() {
-    do {
-        //Generate unique executionID for this loop
-        const executionID = (Math.random()* 1e20).toString(36);
-        const retryItem = cache.shift().split('|');
-        const action = retryItem[0];
-        const itemType = retryItem[1].split(':')[0];
-        const itemID = retryItem[1].split(':')[1];
-        const userID = retryItem[2].split(':')[1];
-
-        logger.info({
-            label: "processRetries",
-            action: "PREPARE_RETRY_ITEM",
-            executionId: executionID,
-            message: `Preparing to ${action} on folder ${itemID} for user ${userID} | Remaining cache size: ${cache.length}`
-        })
-
-        try{
-            const userClient = sdk.getAppAuthClient('user', userID);
-            const userInfo = userCache[userID];
-    
-            if(action === 'getFolderInfo') {
-                await getFolderInfo(userClient, userInfo, itemID, executionID);
-            } else if(action === 'getFolderItems') {
-                await processFolderItems(userClient, userInfo, itemID, executionID);
-            } else if(action === 'getItemInfo') {
-                if(itemType === "file") {
-                    await getFileInfo(userClient, userInfo, itemID, executionID);
-                } else if(itemType === "folder") {
-                    await getFolderInfo(userClient, userInfo, itemID, executionID);
-                } else if(itemType === "web_link") {
-                    await getWeblinkInfo(userClient, userInfo, itemID, executionID);
-                }
+                continue;
             }
-        } catch(err) {
-            logError(err, "processRetries", `retrying ${action} on folder "${itemID}" for user "${userID}"`, executionID)
-        }
+
+            //If user in inactive in Box
+            if(enterpriseUsers[i].status !== "active") {
+                //Log user then skip it
+                logger.warn({
+                    label: "traverse",
+                    action: "NON_ACTIVE_USER",
+                    executionId: "N/A",
+                    message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) has a non-active status - Ignoring`
+                })
+
+                continue;
+            };
+
+            const startingFolderID = '0';
+            getUserItems(enterpriseUsers[i].id, startingFolderID)
+            logger.info({
+                label: "traverse",
+                action: "CREATED_TRAVERSAL_TASK",
+                executionId: "N/A",
+                message: `Created a traversal task for user "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id})`
+            })
+        };
     }
-    while (cache.length);
 }
 
 
 /* index()
- * 
  * returns none
 */
 async function index() {
 
     logger.info({
         label: "index",
-        action: "BEGIN_TRAVERSE",
+        action: "INITIALIZE_TRAVERSAL_TASKS",
         executionId: "N/A",
-        message: `Preparing to traverse`
+        message: `Preparing to create traverse tasks for all items`
     })
 
     await traverse();
 
     logger.info({
         label: "index",
-        action: "END_TRAVERSE",
+        action: "TRAVERSAL_TASKS_INITIALIZED",
         executionId: "N/A",
-        message: `Completed traverse`
+        message: `All traverse tasks have been created and are pending completion`
     })
-
-    logger.info({
-        label: "index",
-        action: "BEGIN_PROCESS_ERRORS",
-        executionId: "N/A",
-        message: `Preparing to process error cache`
-    })
-
-    if(cache.length) {
-        await processRetries();
-    }
-
-    logger.info({
-        label: "index",
-        action: "END_PROCESS_ERRORS",
-        executionId: "N/A",
-        message: `Completed processing error cache`
-    })
-
 }
 
 // Check for incompatible configurations
 if(config.whitelist.enabled && config.blacklist.enabled && config.blacklist.users) {
     console.log('\n\n=============== WARNING ===============\nBlacklist users are ignored when both blacklist and whitelist are enabled together. Continuing automatically in 10 seconds...\n=======================================\n\n');
     setTimeout(function () {
-        logger.debug({
-            label: "script root",
-            action: "START",
-            executionId: "N/A",
-            message: `Starting index()`
-        });
-
         index();
-
-        logger.debug({
-            label: "script root",
-            action: "COMPLETE",
-            executionId: "N/A",
-            message: `index() completed`
-        });
     }, 10000)
 } else {
-    logger.debug({
-        label: "script root",
-        action: "START",
-        executionId: "N/A",
-        message: `Starting index()`
-    });
-    
     // THIS IS WHERE THE MAGIC HAPPENS, PEOPLE
     index();
-    
-    logger.debug({
-        label: "script root",
-        action: "COMPLETE",
-        executionId: "N/A",
-        message: `index() completed`
-    });
 }
