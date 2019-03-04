@@ -2,3 +2,4 @@ node_modules
 auditLogs
 runtimeLogs
 config.json
+code.code-workspace
