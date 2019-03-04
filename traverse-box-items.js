@@ -1,13 +1,13 @@
 /*
  * INTRODUCTION
  * This script will traverse all items in a Box instance while honoring 
- * configurations for a whitelist or blacklist.
+ * configurations for a whitelist, blacklist, or read from CSV.
  * 
  * It also exposes a "performUserDefinedActions" function which allows for
  * custom business logic to be performed on each item retreived during traversal.
  * 
  * All custom business logic should be defined in 
- * the "USER DEFINED LOGIC" section below.
+ * the user-defined-logic.js file.
 */
 
 ////  USER DEFINED LOGIC  /////////////////////////////////////////////////
@@ -30,7 +30,7 @@ const path = require('path');
 //Require PQueue to control tasks
 const PQueue = require('p-queue');
 
-eval(fs.readFileSync('userDefinedLogic.js')+'');
+eval(fs.readFileSync('user-defined-logic.js')+'');
 
 //Initialize user cache
 const userCache = {};
