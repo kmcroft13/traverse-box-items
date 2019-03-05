@@ -781,15 +781,6 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
             info: userInfo
         };
 
-        userCache[userInfo.id].queue.onIdle().then(() => {
-            logger.info({
-                label: "traverse",
-                action: "FINISHED_TASK_QUEUE",
-                executionId: userInfo.id,
-                message: `All tasks processed for "${userInfo.name}" (${userInfo.id}) - Closing queue`
-            })
-        });
-
         logger.info({
             label: "getUserItems",
             action: "RETRIEVE_USER_INFO",
@@ -811,6 +802,15 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
             executionId: executionID,
             message: `Added task to process items for folder ${startingFolderID} | Queue ${userInfo.id} size: ${userCache[userInfo.id].queue.size}`
         })
+
+        userCache[userInfo.id].queue.onIdle().then(() => {
+            logger.info({
+                label: "traverse",
+                action: "FINISHED_TASK_QUEUE",
+                executionId: userInfo.id,
+                message: `All tasks processed for "${userInfo.name}" (${userInfo.id}) - Closing queue`
+            })
+        });
     } catch(err) {
         logError(err, "getUserItems", `Retrieval of user info for user "${userId}"`, executionID)
     }
@@ -873,15 +873,6 @@ async function traverse() {
                 message: `Successfully initialized a task queue for "${boxUser[0].name}" (${boxUser[0].id})`
             })
 
-            userCache[boxUser[0].id].queue.onIdle().then(() => {
-                logger.info({
-                    label: "traverse",
-                    action: "FINISHED_TASK_QUEUE",
-                    executionId: userInfo.id,
-                    message: `All tasks processed for "${userInfo.name}" (${userInfo.id}) - Closing this queue`
-                })
-            });
-
             if(row.type === "file") {
                 userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(userClient, boxUser[0], row.item_id, executionID) });
                 logger.debug({
@@ -907,7 +898,6 @@ async function traverse() {
                     message: `Added task for ${row.type} ${row.item_id} | Queue ${ownerId} size: ${userCache[boxUser[0].id].queue.size}`
                 })
             }
-    
         }
     } else if(config.whitelist.enabled) {
         logger.info({
@@ -962,8 +952,7 @@ async function traverse() {
                 continue;
             };
 
-            const startingFolderID = '0';
-            getUserItems(enterpriseUsers[i].id, startingFolderID)
+            getUserItems(enterpriseUsers[i].id, '0')
             logger.info({
                 label: "traverse",
                 action: "CREATED_TRAVERSAL_TASK",
