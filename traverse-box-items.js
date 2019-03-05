@@ -858,11 +858,13 @@ async function traverse() {
     
             const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
     
-            userCache[boxUser[0].id] = { 
-                queue: new PQueue({interval: 1000, intervalCap: config.maxRequestsPerSecond, carryoverConcurrencyCount: false}),
-                client: userClient,
-                info: boxUser[0]
-            };
+            if (!userCache.hasOwnProperty(boxUser[0].id)) {
+                userCache[boxUser[0].id] = { 
+                    queue: new PQueue({interval: 1000, intervalCap: config.maxRequestsPerSecond, carryoverConcurrencyCount: false}),
+                    client: userClient,
+                    info: boxUser[0]
+                };
+            }
 
             logger.info({
                 label: "traverse",
