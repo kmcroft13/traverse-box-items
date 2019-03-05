@@ -1,7 +1,7 @@
 {
   "modifyData": false,
   "auditTraversal": true,
-  "maxRequestsPerSecond": 16,
+  "maxQueueTasksPerSecond": 16,
   "nonOwnedItems": {
     "skip": true,
     "audit": false

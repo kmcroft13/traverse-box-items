@@ -776,7 +776,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
         const userInfo = await userClient.users.get(userClient.CURRENT_USER_ID)
 
         userCache[userInfo.id] = { 
-            queue: new PQueue({interval: 1000, intervalCap: config.maxRequestsPerSecond, carryoverConcurrencyCount: false}),
+            queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
             client: userClient,
             info: userInfo
         };
@@ -860,7 +860,7 @@ async function traverse() {
     
             if (!userCache.hasOwnProperty(boxUser[0].id)) {
                 userCache[boxUser[0].id] = { 
-                    queue: new PQueue({interval: 1000, intervalCap: config.maxRequestsPerSecond, carryoverConcurrencyCount: false}),
+                    queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
                     client: userClient,
                     info: boxUser[0]
                 };
