@@ -1,14 +1,12 @@
 {
   "name": "traverse-box-items",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Traverse all folders, files, and web links in a Box instance and perform custom actions during processing",
   "main": "traverse-box-items-generic.js",
   "dependencies": {
     "box-node-sdk": "^1.22.0",
     "csv": "^4.0.0",
-    "linkedlist": "^1.0.1",
     "p-queue": "^3.2.0",
-    "sleep": "^5.2.3",
     "winston": "^3.1.0"
   },
   "devDependencies": {},
