@@ -1,9 +1,14 @@
 {
   "modifyData": false,
   "auditTraversal": true,
+  "maxRequestsPerSecond": 16,
   "nonOwnedItems": {
     "skip": true,
     "audit": false
+  },
+  "csv": {
+    "enabled": false,
+    "filePath": ""
   },
   "blacklist": {
     "enabled": false,
