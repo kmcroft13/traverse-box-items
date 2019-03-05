@@ -538,20 +538,20 @@ async function getEnterpriseUsers(client) {
                 label: "getEnterpriseUsers",
                 action: "RETRIEVE_ENTERPRISE_USERS_PAGE",
                 executionId: "N/A",
-                message: `retrieved ${allUsers.length} of ${totalCount} enterprise users`
+                message: `Retrieved ${allUsers.length} of ${totalCount} enterprise users`
             })
         }
         while(offset <= totalCount);
-    } catch(err) {
-        logError(err, "getEnterpriseUsers", `retrieval of enterprise users`, "N/A")
-    }
 
-    logger.info({
-        label: "getEnterpriseUsers",
-        action: "RETRIEVE_ENTERPRISE_USERS",
-        executionId: "N/A",
-        message: `Successfully retrieved all enterprise users`
-    })
+        logger.info({
+            label: "getEnterpriseUsers",
+            action: "RETRIEVE_ENTERPRISE_USERS",
+            executionId: "N/A",
+            message: `Successfully retrieved all enterprise users`
+        })
+    } catch(err) {
+        logError(err, "getEnterpriseUsers", `Retrieval of enterprise users`, "N/A")
+    }
     
     return allUsers;
 }
