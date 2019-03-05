@@ -2,25 +2,27 @@
 //This function is called for each file processed by traverse-box-items.js
 
 /* performUserDefinedActions()
- * param [string] ownerId:
- * param [object] itemObj:
- * param [string] parentExecutionID: 
+ * param [string] ownerId: User ID for the user who owns the item
+ * param [object] itemObj: Object associated with the triggering file, folder, or web_link
+ * param [string] parentExecutionID: Execution ID passed from the triggering function
  * 
  * returns none
 */
 async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) { 
+    //Generate unique executionID for this loop
+    const executionID = (Math.random()* 1e20).toString(36)
+    
     logger.debug({
         label: "performUserDefinedActions",
         action: "PREPARE_USER_DEFINED_ACTION",
-        executionId: parentExecutionID,
+        executionId: `${executionID} | Parent: ${parentExecutionID}`,
         message: `Preparing to perform user defined action for ${itemObj.type} "${itemObj.id}"`
     })
 
-    //Generate unique executionID for this loop
-    const executionID = (Math.random()* 1e20).toString(36)
-    // Initialize variables for user object and user API client
+    // Initialize variables for user object, user API client, and user task queue
     const client = userCache[ownerId].client;
     const clientUserObj = userCache[ownerId].info;
+    const queue = userCache[ownerId].queue;
 
 
     //[OPTIONAL] Take action on ALL OBJECTS here
