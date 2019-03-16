@@ -345,7 +345,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(item, executionID) });
+        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, item, executionID) });
         logger.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
@@ -869,33 +869,33 @@ async function traverse() {
             logger.info({
                 label: "traverse",
                 action: "INITIALIZE_TASK_QUEUE",
-                executionId: userInfo.id,
+                executionId: boxUser[0].id,
                 message: `Successfully initialized a task queue for "${boxUser[0].name}" (${boxUser[0].id})`
             })
 
             if(row.type === "file") {
-                userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(userClient, boxUser[0], row.item_id, executionID) });
+                userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(boxUser[0].id, row.item_id, executionID) });
                 logger.debug({
                     label: "getFileInfo",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
-                    message: `Added task for ${row.type} ${row.item_id} | Queue ${ownerId} size: ${userCache[boxUser[0].id].queue.size}`
+                    message: `Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
                 })
             } else if (row.type === "folder") {
-                userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(userClient, boxUser[0], row.item_id, executionID) });
+                userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(boxUser[0].id, row.item_id, executionID) });
                 logger.debug({
                     label: "getFileInfo",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
-                    message: `Added task for ${row.type} ${row.item_id} | Queue ${ownerId} size: ${userCache[boxUser[0].id].queue.size}`
+                    message: `Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
                 })
             } else { //web_link
-                userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(userClient, boxUser[0], row.item_id, executionID) });
+                userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(boxUser[0].id, row.item_id, executionID) });
                 logger.debug({
                     label: "getFileInfo",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
-                    message: `Added task for ${row.type} ${row.item_id} | Queue ${ownerId} size: ${userCache[boxUser[0].id].queue.size}`
+                    message: `Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
                 })
             }
         }
