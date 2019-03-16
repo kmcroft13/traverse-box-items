@@ -31,6 +31,18 @@ All custom Business Logic must be defined within the user-defined-logic.js file,
     itemObj [object]: A Box item (file, folder, or web_link) object which can be processed or evaluated for processing
     parentExecutionID [string]: The execution ID from the loop which triggered the function
 
+### Examples ###
+The following User Defined Logic examples were built for common use cases. to use an example file, simply copy code form the example file and paste into the `user-defined-logic.js` file!
+
+#### modifySharedLinks ####
+Will check the current shared links of all items and, if the access level matches a certain value, will change the access level. For example, this example can change all "Open" (Public) shared link to "Company Only" shared links.
+
+To leverage this example, the following configuration options must be added to the `userDefinedConfigs` object in [config.json](https://github.com/kmcroft13/traverse-box-items#config-file):
+* matchSharedLinkAccessLevel: Current shared link access level you want to act upon
+* newSharedLinkAccessLevel: Access level to change the shared link to
+
+Possible options for these configuration values are: "open", "company", "collaborators"
+
 ## Logging ##
 ### Audit Logging ###
 A `logAudit` function is exposed to write items to an audit CSV file which write actions the script performs. Audit logging is already implemented for basic traversal (and can be disable via config file). If adding custom User Defined Business Logic, you may also choose to audit your custom actions with this function. This function requires the following parameters:
