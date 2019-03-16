@@ -1,5 +1,13 @@
 ////  USER DEFINED LOGIC  /////////////////////////////////////////////////
 
+/* IMPORTANT
+ * Must add the following configuration options in 
+ * the `userDefinedConfigs` object in config.json:
+ *    - matchSharedLinkAccessLevel: Access level you want to act upon
+ *    - newSharedLinkAccessLevel: Access level to change to
+ * (options are "open", "company", "collaborators")
+*/
+
 /* performUserDefinedActions()
  * param [string] ownerId:
  * param [object] itemObj:
@@ -20,6 +28,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     // Initialize variables for user object and user API client
     const client = userCache[ownerId].client;
     const clientUserObj = userCache[ownerId].info;
+    const queue = userCache[ownerId].queue;
 
     const matchAccessLevel = config.userDefinedConfigs.matchSharedLinkAccessLevel;
     const newAccessLevel = config.userDefinedConfigs.newSharedLinkAccessLevel;
@@ -28,12 +37,12 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     if(config.modifyData) {
         //ACTUALLY MODIFY DATA
         if(getLinkAccess(itemObj.shared_link) === matchAccessLevel) {
-            modifySharedLink(client, itemObj, newAccessLevel, executionID)
+            queue.add( async function() { await modifySharedLink(client, itemObj, newAccessLevel, executionID) });
         }
     } else {
         //PERFORM LOGGING FOR SIMULATION
         if(getLinkAccess(itemObj.shared_link) === matchAccessLevel) {
-            simulateModifySharedLink(itemObj, newAccessLevel, executionID)
+            queue.add( async function() { await simulateModifySharedLink(itemObj, newAccessLevel, executionID) });
         }
     }
     
