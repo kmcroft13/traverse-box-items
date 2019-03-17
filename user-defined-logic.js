@@ -16,7 +16,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
         label: "performUserDefinedActions",
         action: "PREPARE_USER_DEFINED_ACTION",
         executionId: `${executionID} | Parent: ${parentExecutionID}`,
-        message: `Preparing to perform user defined action for ${itemObj.type} "${itemObj.id}"`
+        message: `Performing user defined action for ${itemObj.type} "${itemObj.id}"`
     })
 
     // Initialize variables for user object, user API client, and user task queue

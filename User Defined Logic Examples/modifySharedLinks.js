@@ -20,7 +20,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
         label: "performUserDefinedActions",
         action: "PREPARE_USER_DEFINED_ACTION",
         executionId: parentExecutionID,
-        message: `Preparing to perform user defined action for ${itemObj.type} "${itemObj.id}"`
+        message: `Performing user defined action for ${itemObj.type} "${itemObj.id}"`
     })
 
     //Generate unique executionID for this loop
