@@ -140,6 +140,10 @@ auditor.action({
 const serviceAccountClient = sdk.getAppAuthClient('enterprise', config.enterpriseId);
 ///////////////////////////////////////////////////////////////////////////
 
+////  CREATE USERS TASK QUEUE  ////////////////////////////////////////////
+const usersTaskQueue = new PQueue({concurrency: config.maxConcurrentUsers});
+///////////////////////////////////////////////////////////////////////////
+
 
 ////  HELPER FUNCTIONS  ///////////////////////////////////////////////////
 /* logError()
@@ -910,12 +914,12 @@ async function traverse() {
         for (let i in config.whitelist.items) {
             //Check if we should recurse through child items for this user's whitelist
             for (let folderID in config.whitelist.items[i].folderIDs) {
-                getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems)
+                usersTaskQueue.add( async function() { await getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems) });
                 logger.info({
                     label: "traverse",
                     action: "CREATED_TRAVERSAL_TASK",
                     executionId: "N/A",
-                    message: `Created a traversal task for folder ${folderId} owned by ${config.whitelist.items[i].ownerID})`
+                    message: `Created a traversal task for folder ${folderId} owned by ${config.whitelist.items[i].ownerID}) | Users task queue size: ${usersTaskQueue.size}`
                 })
             };
         }
@@ -923,7 +927,6 @@ async function traverse() {
     } else { //Whitelist not enabled, perform actions on all users (honoring blacklist)
         //Get all enterprise users
         const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
-
 
         for (let i in enterpriseUsers) {
             //Check if user is included in blacklist
@@ -952,12 +955,12 @@ async function traverse() {
                 continue;
             };
 
-            getUserItems(enterpriseUsers[i].id, '0')
+            usersTaskQueue.add( async function() { await getUserItems(enterpriseUsers[i].id, '0') });
             logger.info({
                 label: "traverse",
                 action: "CREATED_TRAVERSAL_TASK",
                 executionId: "N/A",
-                message: `Created a traversal task for user "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id})`
+                message: `Created a traversal task for user "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) | Users task queue size: ${usersTaskQueue.size}`
             })
         };
     }
