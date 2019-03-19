@@ -132,4 +132,4 @@ Even increasing the `maxConcurrentUsers` option by an increment of 1 can have a 
 Note that `maxQueueTasksPerSecond` should not be increased from the default value of 16 unless certain users in your Box instance have been granted an alternative rate limit threshold (this will not be the case for the vast majority of script users).
 
 ## Example Real World Utilization ##
-This script has been successfully used with the default configuration values and 14GB of memory allocated (ie. `--max-old-space-size=15032`) on a Box enterprise with nearly 1000 users, over 20TB of content, and over 9.2 million files. Peak memory usage was just over 13GB and total runtime took 22 hours.
+This script has been successfully used with the default configuration values and 14GB of memory allocated (ie. `--max-old-space-size=15032`) on a Box enterprise with nearly 1000 users, over 20TB of content, and over 9.2 million objects (files, folders, weblinks). Peak memory usage was just over 13GB and total runtime took 22 hours.
