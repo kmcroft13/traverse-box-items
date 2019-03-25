@@ -93,6 +93,7 @@ _**NOTE**: The `boxAppSettings` object in the config is structured slightly diff
 
 * **modifyData** _[boolean]_: Whether or not data should be modified at runtime (if implemented for custom User Defined Business Logic)
 * **auditTraversal** _[boolean]_: Whether or not items should be audit logged during traversal (setting to `true` will output an audit log for each processed item but will cause the audit log to be much larger)
+* **logLevel** _[string]_: Log level to write out for runtime log files. Acceptable values are: "debug", "info", "warn". All events with a severity equal to or more severe than the specified config level will be logged.
 * **maxConcurrentUsers** _[integer]_: Controls the maximum number of users to be concurrently processed for traversal tasks (not applicable in CSV mode)
 * **maxQueueTasksPerSecond** _[integer]_: Controls the maximum number of sub-tasks per user per second (should match the maximum number of allowed Box API requests per second which is 16 by default)
 * **nonOwnedItems** _[object]_: Container object for non-owned item configurations
