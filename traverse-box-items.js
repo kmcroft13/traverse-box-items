@@ -92,7 +92,7 @@ const logger = createLogger({
     transports: [
         new transports.Console({ level: 'debug', colorize: true }),
         new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-error.log'), level: 'error' }),
-        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-combined.log'), level: 'info' })
+        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-combined.log'), level: config.logLevel || 'info' })
     ],
     exceptionHandlers: [
         new transports.Console(),
@@ -335,7 +335,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
             label: "getFolderInfo",
             action: "RETRIEVE_FOLDER_INFO",
             executionId: executionID,
-            message: `retrieved info for folder ${folderID}`
+            message: `Retrieved info for folder ${folderID}`
         })
 
         if(config.auditTraversal) {
@@ -405,7 +405,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
             label: "getFileInfo",
             action: "RETRIEVE_FILE_INFO",
             executionId: executionID,
-            message: `retrieved info for file ${fileID}`
+            message: `Retrieved info for file ${fileID}`
         })
 
         if(config.auditTraversal) {
@@ -476,7 +476,7 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
             label: "getWeblinkInfo",
             action: "RETRIEVE_WEBLINK_INFO",
             executionId: executionID,
-            message: `retrieved info for weblink ${weblinkID}`
+            message: `Retrieved info for weblink ${weblinkID}`
         })
 
         if(config.auditTraversal) {
@@ -828,8 +828,6 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
 async function traverse() {
     //Check if whitelist is enabled
     if(config.csv.enabled) {
-        //Generate unique executionID for this loop
-        const executionID = (Math.random()* 1e20).toString(36);
         //Read wave analysis CSV
         const rawCsv = fs.readFileSync(`${config.csv.filePath}`, 'utf8');
         //Parse wave analysis CSV to JSON
@@ -837,17 +835,29 @@ async function traverse() {
         //Get all Enterprise users
         const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
     
-        for (row of parsedCsv) {
+        for (const [index, row] of parsedCsv.entries()) {
+            //Generate unique executionID for this loop
+            const executionID = (Math.random()* 1e20).toString(36);
             const boxUser = enterpriseUsers.filter( user => user.login === row.owner_login);
 
             //If user in inactive in Box
-            if(boxUser[0].status !== "active") {
+            if(!boxUser[0]) {
+                //Log user then skip it
+                logger.warn({
+                    label: "traverse",
+                    action: "USER_NOT_FOUND",
+                    executionId: executionID,
+                    message: `CSV ROW INDEX ${index}: User "${row.owner_login}" was inaccessible or not found in Box instance`
+                })
+
+                continue;
+            } else if(boxUser[0].status !== "active") {
                 //Log user then skip it
                 logger.warn({
                     label: "traverse",
                     action: "NON_ACTIVE_USER",
-                    executionId: "N/A",
-                    message: `User "${boxUser[0].name}" (${boxUser[0].id}) has a non-active status - Ignoring ${row.type} ${row.item_id}`
+                    executionId: executionID,
+                    message: `CSV ROW INDEX ${index}: User "${boxUser[0].name}" (${boxUser[0].id}) has a non-active status - Ignoring ${row.type} ${row.item_id}`
                 })
 
                 continue;
@@ -857,7 +867,7 @@ async function traverse() {
                 label: "traverse",
                 action: "PARSE_CSV_ROW",
                 executionId: executionID,
-                message: `Processing ${row.type} "${row.item_id}" owned by ${row.owner_login}`
+                message: `PARSING CSV ROW INDEX ${index}: Identified ${row.type} "${row.item_id}" owned by ${row.owner_login}`
             })
     
             const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
@@ -868,38 +878,38 @@ async function traverse() {
                     client: userClient,
                     info: boxUser[0]
                 };
-            }
 
-            logger.info({
-                label: "traverse",
-                action: "INITIALIZE_TASK_QUEUE",
-                executionId: boxUser[0].id,
-                message: `Successfully initialized a task queue for "${boxUser[0].name}" (${boxUser[0].id})`
-            })
+                logger.info({
+                    label: "traverse",
+                    action: "INITIALIZE_TASK_QUEUE",
+                    executionId: boxUser[0].id,
+                    message: `Successfully initialized a task queue for "${boxUser[0].name}" (${boxUser[0].id})`
+                })
+            }
 
             if(row.type === "file") {
                 userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(boxUser[0].id, row.item_id, executionID) });
                 logger.debug({
-                    label: "getFileInfo",
+                    label: "traverse",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
-                    message: `Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                    message: `PARSED CSV ROW INDEX ${index}: Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
                 })
             } else if (row.type === "folder") {
                 userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(boxUser[0].id, row.item_id, executionID) });
                 logger.debug({
-                    label: "getFileInfo",
+                    label: "traverse",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
-                    message: `Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                    message: `PARSED CSV ROW INDEX ${index}: Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
                 })
             } else { //web_link
                 userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(boxUser[0].id, row.item_id, executionID) });
                 logger.debug({
-                    label: "getFileInfo",
+                    label: "traverse",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
-                    message: `Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                    message: `PARSED CSV ROW INDEX ${index}: Added task for ${row.type} ${row.item_id} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
                 })
             }
         }
