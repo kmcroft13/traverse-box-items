@@ -2,7 +2,7 @@
 name: Question/Help
 about: Ask for help or clarification about this project
 title: ''
-labels: question
+labels: ''
 assignees: ''
 
 ---
