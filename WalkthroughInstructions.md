@@ -1,3 +1,5 @@
+# Walkthrough Instructions
+
 The following list will walk you through running the traverse-box-items node script for the purpose of changing all the permission settings on all Shared Links in your enterprise from Open to Company.  Running the following script requires a basic level of knowledge of using the command line and a text editor.  
 
 The node environment configuration instructions are written for a Mac user. 
@@ -102,5 +104,5 @@ https://github.com/kmcroft13/traverse-box-items
           * node traverse-box-items
 
     6. Validate 
-    
+
         a. Run another Shared Link report to verify that your links have been updated. 
