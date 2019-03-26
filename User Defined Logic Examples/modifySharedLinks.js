@@ -131,13 +131,14 @@ async function modifySharedLink(client, itemObj, newAccessLevel, executionID) {
         );
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logger.warn({
+            logError(err, "modifySharedLink", `Request for ${itemObj.type} "${itemObj.id}" rate limited -- Re-adding task to queue`, executionID);
+            queue.add( async function() { await modifySharedLink(client, itemObj, newAccessLevel, executionID) });
+            logger.debug({
                 label: "modifySharedLink",
-                action: "ADD_RETRY_CACHE",
+                action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Request for ${itemObj.type} "${itemObj.id}" rate limited -- Adding to retry cache`
+                message: `Added task for ${itemObj.type} ${itemObj.id} | Queue ${clientUserObj.id} size: ${queue.size}`
             })
-            cache.push(`getItemInfo|file:${fileID}|user:${clientUserObj.id}`);
         } else {
             logError(err, "modifySharedLink", `modification of shared link for ${itemObj.type} "${itemObj.id}"`, executionID);
         }
