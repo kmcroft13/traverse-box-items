@@ -431,7 +431,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
             logError(err, "getFileInfo", `Request for file "${fileID}" rate limited -- Re-adding task to queue`, executionID);
-            userCache[ownerId].queue.add( async function() { await getFileInfo(fileID, parentExecutionID) });
+            userCache[ownerId].queue.add( async function() { await getFileInfo(ownerId, fileID, parentExecutionID) });
             logger.debug({
                 label: "getFileInfo",
                 action: "ADD_TO_QUEUE",
