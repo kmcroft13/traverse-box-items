@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 //Load script configs
-const configLoader = require('../config/config');
+const configLoader = require('../config');
 const config = configLoader.loadConfigs();
 
 ////  CONSTANTS  //////////////////////////////////////////////////////////
