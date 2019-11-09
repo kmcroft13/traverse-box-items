@@ -12,7 +12,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     //Generate unique executionID for this loop
     const executionID = (Math.random()* 1e20).toString(36)
     
-    logger.debug({
+    app.logger.log.debug({
         label: "performUserDefinedActions",
         action: "PREPARE_USER_DEFINED_ACTION",
         executionId: `${executionID} | Parent: ${parentExecutionID}`,

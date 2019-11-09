@@ -19,16 +19,14 @@
 ////  LOAD MODULES  ///////////////////////////////////////////////////////
 // Require module for Box SDK
 const BoxSDK = require('box-node-sdk');
-//Require modules from Winston (logging utility)
-const { createLogger, format, transports } = require('winston');
-const { combine, timestamp, label, printf } = format;
 //Require modules from 'node-csv' (CSV parser)
 const parse = require('csv-parse/lib/sync');
-//Require node fs and path modules
+//Require node fs module
 const fs = require('fs');
-const path = require('path');
 //Require PQueue to control tasks
 const PQueue = require('p-queue');
+
+const app = require('./src');
 
 eval(fs.readFileSync('user-defined-logic.js')+'');
 
@@ -36,20 +34,7 @@ eval(fs.readFileSync('user-defined-logic.js')+'');
 const userCache = {};
 
 ////  LOAD CONFIGURATIONS  ////////////////////////////////////////////////
-// Load JSON from script config file
-const scriptConfigFileName = './config.json';
-const scriptConfigFileContent = fs.readFileSync(`./${scriptConfigFileName}`);
-let config;
-try{
-    config = JSON.parse(scriptConfigFileContent);
-} catch(err) {
-    throw Error(`Could not read configuration file: ${err}`)
-}
-//Check for incompatible configurations
-if((config.csv.enabled && config.whitelist.enabled) || (config.csv.enabled && config.blacklist.enabled)) {
-    console.log(`\n\n=============== WARNING ===============\nThe "whitelist" and "blacklist" features cannot be used while the "CSV" feature is enabled.\nPlease either turn off the "CSV" feature or turn off both the "whitelist" and "blacklist" features and re-run the script to proceed.\n=======================================\n\n`)
-    process.exit(9);
-}
+const config = app.config.loadConfigs();
 
 // Initialize the Box SDK from config file
 const sdk = new BoxSDK({
@@ -58,79 +43,6 @@ const sdk = new BoxSDK({
   appAuth: config.boxAppSettings.appAuth,
   enterpriseID: config.boxAppSettings.enterpriseID,
   request: { strictSSL: true }
-});
-///////////////////////////////////////////////////////////////////////////
-
-
-////  INITIALIZE LOGGING  /////////////////////////////////////////////////
-if (!fs.existsSync('./runtimeLogs')){
-    fs.mkdirSync('./runtimeLogs');
-}
-if (!fs.existsSync('./auditLogs')){
-    fs.mkdirSync('./auditLogs');
-}
-
-const logFormat = printf(info => {
-  return `${info.timestamp}\t${info.level.toUpperCase()}\t${info.executionId}\t${info.label}\t${info.action.toUpperCase()}\t${info.message}\t${info.errorDetails ? `\t${info.errorDetails}` : ``}`;
-});
-
-const actionFormat = printf(info => {
-    return `${info.time ? `"${info.time}` : `"${info.timestamp}`}","${info.label.toUpperCase()}","${info.executionId}","${info.itemID}","${info.itemName}","${info.itemType}","${info.ownedByEmail}","${info.ownedByID}","${info.pathByNames}","${info.pathByIDs}","${info.itemCreatedAt}","${info.modifiedAt}","${info.size}","${info.sharedLink}","${info.sharedLinkAccess}","${info.message}"`;
-  });
-
-const customLogLevels = {
-    levels: {
-        action: 0
-    }
-  };
-
-const logger = createLogger({
-    format: combine(
-        timestamp(),
-        logFormat
-    ),
-    transports: [
-        new transports.Console({ level: 'debug', colorize: true }),
-        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-error.log'), level: 'error' }),
-        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-combined.log'), level: config.logLevel || 'info' })
-    ],
-    exceptionHandlers: [
-        new transports.Console(),
-        new transports.File({ filename: path.join('runtimeLogs', '/scriptLog-exceptions.log') })
-    ]
-});
-
-const d = new Date();
-const datestring = ("0"+(d.getMonth()+1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2) + "-" + d.getFullYear() + "_" + ("0" + d.getHours()).slice(-2) + "-" + ("0" + d.getMinutes()).slice(-2);
-const auditor = createLogger({
-    format: combine(
-        timestamp(),
-        actionFormat
-    ),
-    levels: customLogLevels.levels,
-    transports: [
-        new transports.File({ filename: path.join('auditLogs', `/${datestring}_Results.csv`), level: 'action' })
-    ]
-});
-
-//Workaround to create "header" row in Results log file
-auditor.action({
-    time: "TIMESTAMP",
-    label: "ACTION",
-    executionId: "EXECUTION_ID",
-    itemID: "BOX_ITEM_ID",
-    itemName: "BOX_ITEM_NAME",
-    itemType: "BOX_ITEM_TYPE",
-    ownedByEmail: "OWNED_BY_EMAIL",
-    ownedByID: "OWNED_BY_ID",
-    pathByNames: "PATH_BY_NAME",
-    pathByIDs: "PATH_BY_ID",
-    itemCreatedAt: "ITEM_CREATED_AT",
-    modifiedAt: "ITEM_MODIFIED_AT",
-    size: "ITEM_SIZE_BYTES",
-    sharedLink: "ITEM_LINK",
-    sharedLinkAccess: "LINK_ACCESS_LEVEL",
-    message: "DETAILS"
 });
 ///////////////////////////////////////////////////////////////////////////
 
@@ -145,165 +57,7 @@ const usersTaskQueue = new PQueue({concurrency: config.maxConcurrentUsers});
 ///////////////////////////////////////////////////////////////////////////
 
 
-////  HELPER FUNCTIONS  ///////////////////////////////////////////////////
-/* logError()
- * param [object] err: Error object returned from catch
- * param [string] functionName: NAme of the function which originated the error
- * param [string] failedEvent: Description of the action which failed
- * param [string] executionID: Unique ID associated with a given execution loop
- * 
- * returns none
-*/
-function logError(err, functionName, failedEvent, executionID) {
-    if(err.response) {
-        if(err.response.statusCode === 429) {
-            logger.warn({
-                label: functionName,
-                action: "BOX_RATE_LIMITED",
-                executionId: executionID,
-                message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
-                errorDetails: JSON.stringify(err.response)
-            });
-        } else if(err.response.body.code) {
-            logger.error({
-                label: functionName,
-                action: "BOX_REQUEST_FAILED",
-                executionId: executionID,
-                message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
-                errorDetails: JSON.stringify(err.response)
-            });
-        } else if(err.response.body.error) {
-            logger.error({
-                label: functionName,
-                action: "BOX_REQUEST_FAILED",
-                executionId: executionID,
-                message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.error} | Message: ${err.response.body.error_description}`,
-                errorDetails: JSON.stringify(err.response)
-            });
-        } else {
-            logger.error({
-                label: functionName,
-                action: "REQUEST_FAILED",
-                executionId: executionID,
-                message: `${failedEvent} | Status: ${err.response.statusCode}`,
-                errorDetails: JSON.stringify(err.response)
-            });
-        }
-    } else {
-        logger.error({
-            label: functionName,
-            action: "UNKNOWN_ERROR",
-            executionId: executionID,
-            message: failedEvent,
-            errorDetails: JSON.stringify(err)
-        });
-    }
-}
-
-
-/* logAudit()
- * param [string] action: Action that is being audited
- * param [object] boxItemObj: Box item object (folder, file, web_link)
- * param [string] message: Additional details about the event
- * param [string] executionID: Unique ID associated with a given execution loop
- * 
- * returns none
-*/
-function logAudit(action, boxItemObj, message, executionID) {
-    auditor.action({
-        label: action,
-        executionId: executionID,
-        itemID: boxItemObj.id,
-        itemName: boxItemObj.name,
-        itemType: boxItemObj.type,
-        ownedByEmail: boxItemObj.owned_by.login,
-        ownedByID: boxItemObj.owned_by.id,
-        pathByNames: buildPathByName(boxItemObj),
-        pathByIDs: buildPathByID(boxItemObj),
-        itemCreatedAt: boxItemObj.created_at,
-        modifiedAt: boxItemObj.modified_at,
-        size: boxItemObj.size,
-        sharedLink: getLinkURL(boxItemObj.shared_link),
-        sharedLinkAccess: getLinkAccess(boxItemObj.shared_link),
-        message: message
-    });
-}
-///////////////////////////////////////////////////////////////////////////
-
-
 ////  CORE BUSINESS LOGIC  ////////////////////////////////////////////////
-
-/* buildPathByName()
- * param [object] itemObj: Box item object (folder, file, web_link)
- * 
- * returns [string] Path to the item expressed as a string of item names separated by slashes ( / )
-*/
-function buildPathByName(itemObj) {
-    let pathString = "";
-
-    itemObj.path_collection.entries.forEach(function (item) {
-        pathString += `/${item.name}`
-    });
-
-    pathString += `/${itemObj.name}`
-
-    return pathString
-}
-
-
-/* buildPathByID()
- * param [object] itemObj: Box item object (folder, file, web_link)
- * 
- * returns [string] Path to the item expressed as a string of item IDs separated by slashes ( / )
-*/
-function buildPathByID(itemObj) {
-    let pathString = "";
-
-    itemObj.path_collection.entries.forEach(function (item) {
-        pathString += `/${item.id}`
-    });
-
-    pathString += `/${itemObj.id}`
-
-    return pathString
-}
-
-
-/* getLinkURL()
- * param [object] sharedLinkObj: Box shared_link sub-object from a file, folder, or web_link
- * 
- * returns [string] Shared Link URL or an empty string if no link
-*/
-function getLinkURL(sharedLinkObj) {
-    let urlString;
-
-    if (sharedLinkObj == null) {
-        urlString = ""
-    } else {
-        urlString = sharedLinkObj.url
-    }
-
-    return urlString
-}
-
-
-/* getLinkAccess()
- * param [object] sharedLinkObj: Box shared_link sub-object from a file, folder, or web_link
- * 
- * returns [string] Shared Link access level or an empty string if no link
-*/
-function getLinkAccess(sharedLinkObj) {
-    let accessString;
-
-    if (sharedLinkObj == null) {
-        accessString = ""
-    } else {
-        accessString = sharedLinkObj.access
-    }
-
-    return accessString
-}
-
 
 /* getFolderInfo()
  * param [string] ownerId: User ID for the user who owns the item
@@ -314,7 +68,7 @@ function getLinkAccess(sharedLinkObj) {
 */
 async function getFolderInfo(ownerId, folderID, parentExecutionID) {
 
-    logger.info({
+    app.logger.log.info({
         label: "getFolderInfo",
         action: "PREPARE_FOLDER_INFO",
         executionId: parentExecutionID,
@@ -331,7 +85,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
             fields: config.boxItemFields
         })
 
-        logger.info({
+        app.logger.log.info({
             label: "getFolderInfo",
             action: "RETRIEVE_FOLDER_INFO",
             executionId: executionID,
@@ -339,7 +93,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
         })
 
         if(config.auditTraversal) {
-            logAudit(
+            app.logger.logAudit(
                 "GET_ITEM", 
                 item, 
                 `Successfully retrieved item`, 
@@ -350,7 +104,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
         userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, item, executionID) });
-        logger.debug({
+        app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
@@ -360,16 +114,16 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logError(err, "getFolderInfo", `Request for folder "${folderID}" rate limited -- Re-adding task to queue`, executionID);
+            app.logger.logError(err, "getFolderInfo", `Request for folder "${folderID}" rate limited -- Re-adding task to queue`, executionID);
             userCache[ownerId].queue.add( async function() { await getFolderInfo(ownerId, folderID, parentExecutionID) });
-            logger.debug({
+            app.logger.log.debug({
                 label: "getFolderInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
                 message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
             })
         } else {
-            logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${userCache[ownerId].info.id}`, executionID);
+            app.logger.logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${userCache[ownerId].info.id}`, executionID);
         }
     }
 }
@@ -384,7 +138,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
 */
 async function getFileInfo(ownerId, fileID, parentExecutionID) {
 
-    logger.info({
+    app.logger.log.info({
         label: "getFileInfo",
         action: "PREPARE_FILE_INFO",
         executionId: parentExecutionID,
@@ -401,7 +155,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
             fields: config.boxItemFields
         })
 
-        logger.info({
+        app.logger.log.info({
             label: "getFileInfo",
             action: "RETRIEVE_FILE_INFO",
             executionId: executionID,
@@ -409,7 +163,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
         })
 
         if(config.auditTraversal) {
-            logAudit(
+            app.logger.logAudit(
                 "GET_ITEM", 
                 item, 
                 `Successfully retrieved item`, 
@@ -420,7 +174,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
         userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, item, executionID) });
-        logger.debug({
+        app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
@@ -430,16 +184,16 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logError(err, "getFileInfo", `Request for file "${fileID}" rate limited -- Re-adding task to queue`, executionID);
+            app.logger.logError(err, "getFileInfo", `Request for file "${fileID}" rate limited -- Re-adding task to queue`, executionID);
             userCache[ownerId].queue.add( async function() { await getFileInfo(ownerId, fileID, parentExecutionID) });
-            logger.debug({
+            app.logger.log.debug({
                 label: "getFileInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
                 message: `Added task for file ${fileID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
             })
         } else {
-            logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${ownerId}`, executionID);
+            app.logger.logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${ownerId}`, executionID);
         }
     }
 }
@@ -455,7 +209,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
 */
 async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
 
-    logger.info({
+    app.logger.log.info({
         label: "getWeblinkInfo",
         action: "PREPARE_WEBLINK_INFO",
         executionId: parentExecutionID,
@@ -472,7 +226,7 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
             fields: config.boxItemFields
         })
 
-        logger.info({
+        app.logger.log.info({
             label: "getWeblinkInfo",
             action: "RETRIEVE_WEBLINK_INFO",
             executionId: executionID,
@@ -480,7 +234,7 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
         })
 
         if(config.auditTraversal) {
-            logAudit(
+            app.logger.logAudit(
                 "GET_ITEM", 
                 item, 
                 `Successfully retrieved item`, 
@@ -491,7 +245,7 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
         userCache[ownerId].queue.add( async function() { performUserDefinedActions(ownerId, item, executionID) });
-        logger.debug({
+        app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
@@ -501,16 +255,16 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logError(err, "getWeblinkInfo", `Request for weblink "${weblinkID}" rate limited -- Re-adding task to queue`, executionID);
+            app.logger.logError(err, "getWeblinkInfo", `Request for weblink "${weblinkID}" rate limited -- Re-adding task to queue`, executionID);
             userCache[ownerId].queue.add( async function() { await getWeblinkInfo(ownerId, weblinkID, parentExecutionID) });
-            logger.debug({
+            app.logger.log.debug({
                 label: "getWeblinkInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
                 message: `Added task for weblink ${weblinkID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
             })
         } else {
-            logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${ownerId}`, executionID);
+            app.logger.logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${ownerId}`, executionID);
         }
     }
 }
@@ -538,7 +292,7 @@ async function getEnterpriseUsers(client) {
             offset = enterpriseUsers.offset + enterpriseUsers.limit;
             totalCount = enterpriseUsers.total_count;
 
-            logger.info({
+            app.logger.log.info({
                 label: "getEnterpriseUsers",
                 action: "RETRIEVE_ENTERPRISE_USERS_PAGE",
                 executionId: "N/A",
@@ -547,14 +301,14 @@ async function getEnterpriseUsers(client) {
         }
         while(offset <= totalCount);
 
-        logger.info({
+        app.logger.log.info({
             label: "getEnterpriseUsers",
             action: "RETRIEVE_ENTERPRISE_USERS",
             executionId: "N/A",
             message: `Successfully retrieved all enterprise users`
         })
     } catch(err) {
-        logError(err, "getEnterpriseUsers", `Retrieval of enterprise users`, "N/A")
+        app.logger.logError(err, "getEnterpriseUsers", `Retrieval of enterprise users`, "N/A")
     }
     
     return allUsers;
@@ -585,7 +339,7 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
             offset = folderItems.offset + folderItems.limit;
             totalCount = folderItems.total_count;
 
-            logger.info({
+            app.logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_FOLDER_ITEMS_PAGE",
                 executionId: parentExecutionID,
@@ -595,14 +349,14 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
         while(offset <= totalCount);
 
         if(folderID === '0') {
-            logger.info({
+            app.logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_ROOT_ITEMS",
                 executionId: parentExecutionID,
                 message: `Retrieved ${allItems.length} of ${totalCount} root items for "${userCache[ownerId].info.name}" (${userCache[ownerId].info.id})`
             })
         } else {
-            logger.info({
+            app.logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_CHILD_ITEMS",
                 executionId: parentExecutionID,
@@ -611,7 +365,7 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
         }
     } catch(err) {
         //Need to throw error here so that it propogates up to next try/catch
-        logError(err, "getFolderItems", `Retrieval of child items for folder ${folderID} owned by ${userCache[ownerId].info.id}`, parentExecutionID);
+        app.logger.logError(err, "getFolderItems", `Retrieval of child items for folder ${folderID} owned by ${userCache[ownerId].info.id}`, parentExecutionID);
         throw Error(`Retrieval of child items for folder ${folderID} owned by ${userCache[ownerId].info.id} failed`);
     }
     
@@ -633,14 +387,14 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
     const executionID = (Math.random()* 1e20).toString(36)
     
     if(folderID === '0') {
-        logger.info({
+        app.logger.log.info({
             label: "processFolderItems",
             action: "PREPARE_ROOT_ITEMS",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
             message: `Beginning to traverse root items for "${userCache[ownerId].info.name}" (${userCache[ownerId].info.id})`
         })
     } else {
-        logger.info({
+        app.logger.log.info({
             label: "processFolderItems",
             action: "PREPARE_CHILD_ITEMS",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
@@ -653,15 +407,15 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
     try {
         items = await getFolderItems(ownerId, folderID, executionID);
     } catch(err) {
-        logError(err, "processFolderItems", `Error retrieving folder items -- Re-adding task to queue`, executionID);
+        app.logger.logError(err, "processFolderItems", `Error retrieving folder items -- Re-adding task to queue`, executionID);
         userCache[ownerId].queue.add( async function() { await processFolderItems(ownerId, folderID, parentExecutionID, followChildItems, firstIteration) });
-        logger.debug({
+        app.logger.log.debug({
             label: "processFolderItems",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
             message: `Added task to process items for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
         })
-        logger.warn({
+        app.logger.log.warn({
             label: "processFolderItems",
             action: "KILL_TASK",
             executionId: executionID,
@@ -675,7 +429,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
     //This only applies if using whitelist configuration!
     if(firstIteration && folderID !== '0') {
         userCache[ownerId].queue.add( async function() { await getFolderInfo(ownerId, folderID, executionID) });
-        logger.debug({
+        app.logger.log.debug({
             label: "getFolderInfo",
             action: "ADD_TO_QUEUE",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
@@ -687,7 +441,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         //If getting root items, check if item is owned by the current user and if skip nonOwnedItems flag is true
         if(folderID === '0' && items[i].owned_by.id !== ownerId && config.nonOwnedItems.skip) {
             //Log item then skip it
-            logger.debug({
+            app.logger.log.debug({
                 label: "processFolderItems",
                 action: "IGNORE_NONOWNED_ITEM",
                 executionId: executionID,
@@ -695,7 +449,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
             })
 
             if(config.nonOwnedItems.audit) {
-                logAudit(
+                app.logger.logAudit(
                     "SKIP_ITEM", 
                     items[i], 
                     `Successfully retrieved skipped item`, 
@@ -709,7 +463,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         //If blacklist is enabled and if folder is included in blacklist
         if(items[i].type === "folder" && config.blacklist.enabled && config.blacklist.folders.includes(items[i].id)) {
             //Log item then skip it
-            logger.warn({
+            app.logger.log.warn({
                 label: "processFolderItems",
                 action: "IGNORE_BLACKLIST_ITEM",
                 executionId: executionID,
@@ -720,7 +474,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         }
 
         if(config.auditTraversal) {
-            logAudit(
+            app.logger.logAudit(
                 "GET_ITEM", 
                 items[i], 
                 `Successfully retrieved item`, 
@@ -731,7 +485,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         //PERFORM USER DEFINED ACTION(S)
         //Pass item object to user defined functions
         userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, items[i], executionID) });
-        logger.debug({
+        app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
@@ -741,7 +495,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         //Only recurse if item is folder and if followChildItems is true
         if(items[i].type === "folder" && followChildItems) {
             userCache[ownerId].queue.add( async function() { return await processFolderItems(ownerId, items[i].id, executionID) });
-            logger.debug({
+            app.logger.log.debug({
                 label: "processFolderItems",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
@@ -765,7 +519,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
     //Generate a unique execution ID to track loop execution across functions
     const executionID = (Math.random()* 1e20).toString(36)
 
-    logger.info({
+    app.logger.log.info({
         label: "getUserItems",
         action: "PREPARE_GET_ITEMS",
         executionId: executionID,
@@ -785,14 +539,14 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
             info: userInfo
         };
 
-        logger.info({
+        app.logger.log.info({
             label: "getUserItems",
             action: "RETRIEVE_USER_INFO",
             executionId: executionID,
             message: `Successfully retrieved user info for "${userInfo.name}" (${userInfo.id})`
         })
 
-        logger.info({
+        app.logger.log.info({
             label: "traverse",
             action: "INITIALIZE_TASK_QUEUE",
             executionId: userInfo.id,
@@ -800,7 +554,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
         })
         
         userCache[userInfo.id].queue.add( async function() { return await processFolderItems(userInfo.id, startingFolderID, executionID, followChildItems, true) } );
-        logger.debug({
+        app.logger.log.debug({
             label: "processFolderItems",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
@@ -808,7 +562,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
         })
 
         userCache[userInfo.id].queue.onIdle().then(() => {
-            logger.info({
+            app.logger.log.info({
                 label: "traverse",
                 action: "FINISHED_TASK_QUEUE",
                 executionId: userInfo.id,
@@ -816,7 +570,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
             })
         });
     } catch(err) {
-        logError(err, "getUserItems", `Retrieval of user info for user "${userId}"`, executionID)
+        app.logger.logError(err, "getUserItems", `Retrieval of user info for user "${userId}"`, executionID)
     }
 }
 
@@ -860,7 +614,7 @@ async function traverse() {
             } else if (row.hasOwnProperty('Owner Login')) {
                 ownerLogin = row['Owner Login'];
             } else {
-                logger.warn({
+                app.logger.log.warn({
                     label: "traverse",
                     action: "INCOMPLETE_ROW",
                     executionId: "N/A",
@@ -874,7 +628,7 @@ async function traverse() {
             } else if (row.hasOwnProperty('Folder/File ID')) {
                 itemId = row['Folder/File ID'];
             } else {
-                logger.warn({
+                app.logger.log.warn({
                     label: "traverse",
                     action: "INCOMPLETE_ROW",
                     executionId: "N/A",
@@ -890,7 +644,7 @@ async function traverse() {
             } else if(row.hasOwnProperty('Path')) {
                 type = setFileType(row['Path']);
             } else {
-                logger.warn({
+                app.logger.log.warn({
                     label: "traverse",
                     action: "INCOMPLETE_ROW",
                     executionId: "N/A",
@@ -905,7 +659,7 @@ async function traverse() {
             //If user in inactive in Box
             if(!boxUser[0]) {
                 //Log user then skip it
-                logger.warn({
+                app.logger.log.warn({
                     label: "traverse",
                     action: "USER_NOT_FOUND",
                     executionId: executionID,
@@ -915,7 +669,7 @@ async function traverse() {
                 continue;
             } else if(boxUser[0].status !== "active") {
                 //Log user then skip it
-                logger.warn({
+                app.logger.log.warn({
                     label: "traverse",
                     action: "NON_ACTIVE_USER",
                     executionId: executionID,
@@ -925,7 +679,7 @@ async function traverse() {
                 continue;
             };
     
-            logger.info({
+            app.logger.log.info({
                 label: "traverse",
                 action: "PARSE_CSV_ROW",
                 executionId: executionID,
@@ -941,7 +695,7 @@ async function traverse() {
                     info: boxUser[0]
                 };
 
-                logger.info({
+                app.logger.log.info({
                     label: "traverse",
                     action: "INITIALIZE_TASK_QUEUE",
                     executionId: boxUser[0].id,
@@ -951,7 +705,7 @@ async function traverse() {
 
             if(type === "file") {
                 userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(boxUser[0].id, itemId, executionID) });
-                logger.debug({
+                app.logger.log.debug({
                     label: "traverse",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
@@ -959,7 +713,7 @@ async function traverse() {
                 })
             } else if(type === "folder") {
                 userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(boxUser[0].id, itemId, executionID) });
-                logger.debug({
+                app.logger.log.debug({
                     label: "traverse",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
@@ -967,7 +721,7 @@ async function traverse() {
                 })
             } else if(type === "web_link") {
                 userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(boxUser[0].id, itemId, executionID) });
-                logger.debug({
+                app.logger.log.debug({
                     label: "traverse",
                     action: "ADD_TO_QUEUE",
                     executionId: executionID,
@@ -976,7 +730,7 @@ async function traverse() {
             }
         }
     } else if(config.whitelist.enabled) {
-        logger.info({
+        app.logger.log.info({
             label: "traverse",
             action: "WHITELIST",
             executionId: "N/A",
@@ -987,7 +741,7 @@ async function traverse() {
             //Check if we should recurse through child items for this user's whitelist
             for (let folderID in config.whitelist.items[i].folderIDs) {
                 usersTaskQueue.add( async function() { await getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems) });
-                logger.info({
+                app.logger.log.info({
                     label: "traverse",
                     action: "CREATED_TRAVERSAL_TASK",
                     executionId: "N/A",
@@ -1004,7 +758,7 @@ async function traverse() {
             //Check if user is included in blacklist
             if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
                 //Log item then skip it
-                logger.warn({
+                app.logger.log.warn({
                     label: "traverse",
                     action: "IGNORE_USER",
                     executionId: "N/A",
@@ -1017,7 +771,7 @@ async function traverse() {
             //If user in inactive in Box
             if(enterpriseUsers[i].status !== "active") {
                 //Log user then skip it
-                logger.warn({
+                app.logger.log.warn({
                     label: "traverse",
                     action: "NON_ACTIVE_USER",
                     executionId: "N/A",
@@ -1028,7 +782,7 @@ async function traverse() {
             };
 
             usersTaskQueue.add( async function() { await getUserItems(enterpriseUsers[i].id, '0') });
-            logger.info({
+            app.logger.log.info({
                 label: "traverse",
                 action: "CREATED_TRAVERSAL_TASK",
                 executionId: "N/A",
@@ -1044,7 +798,7 @@ async function traverse() {
 */
 async function index() {
 
-    logger.info({
+    app.logger.log.info({
         label: "index",
         action: "INITIALIZE_TRAVERSAL_TASKS",
         executionId: "N/A",
@@ -1053,7 +807,7 @@ async function index() {
 
     await traverse();
 
-    logger.info({
+    app.logger.log.info({
         label: "index",
         action: "TRAVERSAL_TASKS_INITIALIZED",
         executionId: "N/A",
