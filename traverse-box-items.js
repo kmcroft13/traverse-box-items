@@ -19,13 +19,11 @@
 ////  LOAD MODULES  ///////////////////////////////////////////////////////
 // Require module for Box SDK
 const BoxSDK = require('box-node-sdk');
-//Require modules from 'node-csv' (CSV parser)
-const parse = require('csv-parse/lib/sync');
 //Require node fs module
 const fs = require('fs');
 //Require PQueue to control tasks
 const PQueue = require('p-queue');
-
+//Require core app source logic
 const app = require('./src');
 
 eval(fs.readFileSync('user-defined-logic.js')+'');
@@ -583,152 +581,131 @@ async function traverse() {
 
     //Check if whitelist is enabled
     if(config.csv.enabled) {
+        app.logger.log.debug({
+            label: "traverse",
+            action: "CSV_OPTION_ENABLED",
+            executionId: "N/A",
+            message: `CSV config option is enabled, proceeding with CSV based traversal.`
+        })
 
-        function setFileType(path) {
-            if (path.slice(0,4) === "http" ) {
-                return "web_link"
-            } else if (path.slice(-1) === "/") {
-                return "folder"
-            } else {
-                return "file"
-            }
-        }
+        //Attempt to read and parse CSV file
+        const parsedCsv = app.csv.parseFile(config.csv.filePath);
+        const headerValidationObj = app.csv.validateRow(0, parsedCsv[0]);
 
-        //Read wave analysis CSV
-        const rawCsv = fs.readFileSync(`${config.csv.filePath}`, 'utf8');
-        //Parse wave analysis CSV to JSON
-        const parsedCsv = parse(rawCsv, {columns: true, skip_empty_lines: true, skip_lines_with_empty_values: true});
-        //Get all Enterprise users
-        const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
-    
-        for (const [index, row] of parsedCsv.entries()) {
-            //Generate unique executionID for this loop
-            const executionID = (Math.random()* 1e20).toString(36);
-
-            //Normalize inputs first
-            let ownerLogin = "";
-            let itemId = "";
-            let type = "";
-            if(row.hasOwnProperty('owner_login')) {
-                ownerLogin = row['owner_login'];
-            } else if (row.hasOwnProperty('Owner Login')) {
-                ownerLogin = row['Owner Login'];
-            } else {
-                app.logger.log.warn({
-                    label: "traverse",
-                    action: "INCOMPLETE_ROW",
-                    executionId: "N/A",
-                    message: `Row is missing "owner login" information: ${JSON.stringify(row)} `
-                })
-                continue;
-            }
-    
-            if(row.hasOwnProperty('item_id')) {
-                itemId = row['item_id'];
-            } else if (row.hasOwnProperty('Folder/File ID')) {
-                itemId = row['Folder/File ID'];
-            } else {
-                app.logger.log.warn({
-                    label: "traverse",
-                    action: "INCOMPLETE_ROW",
-                    executionId: "N/A",
-                    message: `Row is missing "item ID" information: ${JSON.stringify(row)} `
-                })
-                continue;
-            }
-    
-            if(row.hasOwnProperty('type')) {
-                type = row['type'];
-            } else if(row.hasOwnProperty('path')) {
-                type = setFileType(row['path']);
-            } else if(row.hasOwnProperty('Path')) {
-                type = setFileType(row['Path']);
-            } else {
-                app.logger.log.warn({
-                    label: "traverse",
-                    action: "INCOMPLETE_ROW",
-                    executionId: "N/A",
-                    message: `Row is missing "type" information: ${JSON.stringify(row)} `
-                })
-                continue;
-            }
-
-            //Continue with row processing
-            const boxUser = enterpriseUsers.filter( user => user.login === ownerLogin);
-
-            //If user in inactive in Box
-            if(!boxUser[0]) {
-                //Log user then skip it
-                app.logger.log.warn({
-                    label: "traverse",
-                    action: "USER_NOT_FOUND",
-                    executionId: executionID,
-                    message: `CSV ROW INDEX ${index}: User "${ownerLogin}" was inaccessible or not found in Box instance`
-                })
-
-                continue;
-            } else if(boxUser[0].status !== "active") {
-                //Log user then skip it
-                app.logger.log.warn({
-                    label: "traverse",
-                    action: "NON_ACTIVE_USER",
-                    executionId: executionID,
-                    message: `CSV ROW INDEX ${index}: User "${boxUser[0].name}" (${boxUser[0].id}) has a non-active status - Ignoring ${row.type} ${row.item_id}`
-                })
-
-                continue;
-            };
-    
-            app.logger.log.info({
+        if(!headerValidationObj.validationsPassed) {
+            app.logger.log.error({
                 label: "traverse",
-                action: "PARSE_CSV_ROW",
-                executionId: executionID,
-                message: `PARSING CSV ROW INDEX ${index}: Identified ${type} "${itemId}" owned by ${ownerLogin}`
+                action: "INCORRECT_HEADER",
+                executionId: "N/A",
+                message: `Could not parse CSV because of missing required header (${headerValidationObj.validationErrors.join(' , ')})`
             })
-    
-            const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
-    
-            if (!userCache.hasOwnProperty(boxUser[0].id)) {
-                userCache[boxUser[0].id] = { 
-                    queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
-                    client: userClient,
-                    info: boxUser[0]
-                };
+        } else {
+            app.logger.log.debug({
+                label: "traverse",
+                action: "HEADER_VALIDATIONS_PASSED",
+                executionId: "N/A",
+                message: `Header validations passed: ${headerValidationObj.validationsPassed}`
+            })
 
+            //Get all Enterprise users
+            const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
+        
+            for (const [index, row] of parsedCsv.entries()) {
+                //Generate unique executionID for this loop
+                const executionID = (Math.random()* 1e20).toString(36);
+
+                const rowValidationObj = app.csv.validateRow(index, row);
+
+                if(!rowValidationObj.validationsPassed) {
+                    app.logger.log.warn({
+                        label: "traverse",
+                        action: "INCOMPLETE_ROW",
+                        executionId: "N/A",
+                        message: `Row ${index + 1} skipped because it is missing required information (${rowValidationObj.validationErrors.join(' , ')}): ${JSON.stringify(row)}`
+                    })
+                    continue;
+                }
+
+                const normalizedRow = app.csv.normalizeRow(index, row, rowValidationObj);
+
+                //Continue with row processing
+                const boxUser = enterpriseUsers.filter( user => user.login === normalizedRow.ownerLogin);
+
+                //If user in inactive in Box
+                if(!boxUser[0]) {
+                    //Log user then skip it
+                    app.logger.log.warn({
+                        label: "traverse",
+                        action: "USER_NOT_FOUND",
+                        executionId: executionID,
+                        message: `CSV ROW ${index + 1}: User "${normalizedRow.ownerLogin}" was inaccessible or not found in Box instance`
+                    })
+
+                    continue;
+                } else if(boxUser[0].status !== "active") {
+                    //Log user then skip it
+                    app.logger.log.warn({
+                        label: "traverse",
+                        action: "NON_ACTIVE_USER",
+                        executionId: executionID,
+                        message: `CSV ROW ${index + 1}: User "${boxUser[0].name}" (${boxUser[0].id}) has a non-active status - Ignoring ${row.type} ${row.item_id}`
+                    })
+
+                    continue;
+                };
+        
                 app.logger.log.info({
                     label: "traverse",
-                    action: "INITIALIZE_TASK_QUEUE",
-                    executionId: boxUser[0].id,
-                    message: `Successfully initialized a task queue for "${boxUser[0].name}" (${boxUser[0].id})`
+                    action: "PARSE_CSV_ROW",
+                    executionId: executionID,
+                    message: `PARSING CSV ROW ${index + 1}: Identified ${normalizedRow.type} "${normalizedRow.itemId}" owned by ${normalizedRow.ownerLogin}`
                 })
-            }
+        
+                const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
+        
+                if (!userCache.hasOwnProperty(boxUser[0].id)) {
+                    userCache[boxUser[0].id] = { 
+                        queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
+                        client: userClient,
+                        info: boxUser[0]
+                    };
 
-            if(type === "file") {
-                userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(boxUser[0].id, itemId, executionID) });
-                app.logger.log.debug({
-                    label: "traverse",
-                    action: "ADD_TO_QUEUE",
-                    executionId: executionID,
-                    message: `PARSED CSV ROW INDEX ${index}: Added task for ${type} ${itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
-                })
-            } else if(type === "folder") {
-                userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(boxUser[0].id, itemId, executionID) });
-                app.logger.log.debug({
-                    label: "traverse",
-                    action: "ADD_TO_QUEUE",
-                    executionId: executionID,
-                    message: `PARSED CSV ROW INDEX ${index}: Added task for ${type} ${itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
-                })
-            } else if(type === "web_link") {
-                userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(boxUser[0].id, itemId, executionID) });
-                app.logger.log.debug({
-                    label: "traverse",
-                    action: "ADD_TO_QUEUE",
-                    executionId: executionID,
-                    message: `PARSED CSV ROW INDEX ${index}: Added task for ${type} ${itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
-                })
+                    app.logger.log.info({
+                        label: "traverse",
+                        action: "INITIALIZE_TASK_QUEUE",
+                        executionId: boxUser[0].id,
+                        message: `Successfully initialized a task queue for "${boxUser[0].name}" (${boxUser[0].id})`
+                    })
+                }
+
+                if(normalizedRow.type === "file") {
+                    userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    app.logger.log.debug({
+                        label: "traverse",
+                        action: "ADD_TO_QUEUE",
+                        executionId: executionID,
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                    })
+                } else if(normalizedRow.type === "folder") {
+                    userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    app.logger.log.debug({
+                        label: "traverse",
+                        action: "ADD_TO_QUEUE",
+                        executionId: executionID,
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                    })
+                } else if(normalizedRow.type === "web_link") {
+                    userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    app.logger.log.debug({
+                        label: "traverse",
+                        action: "ADD_TO_QUEUE",
+                        executionId: executionID,
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                    })
+                }
             }
         }
+
     } else if(config.whitelist.enabled) {
         app.logger.log.info({
             label: "traverse",
