@@ -25,11 +25,12 @@ const fs = require('fs');
 const PQueue = require('p-queue');
 //Require core app source logic
 const app = require('./src');
+const actions = require('./user-defined-logic');
 
-eval(fs.readFileSync('user-defined-logic.js')+'');
+//eval(fs.readFileSync('user-defined-logic.js')+'');
 
 //Initialize user cache
-const userCache = {};
+//const userCache = {};
 
 ////  LOAD CONFIGURATIONS  ////////////////////////////////////////////////
 const config = app.config.loadConfigs();
@@ -78,7 +79,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
 
     let item;
     try {
-        item = await userCache[ownerId].client.folders.get(folderID,
+        item = await app.userCache.getUser(ownerId).client.folders.get(folderID,
         {
             fields: config.boxItemFields
         })
@@ -101,27 +102,27 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, item, executionID) });
+        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
         app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
         })
     
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
             app.logger.logError(err, "getFolderInfo", `Request for folder "${folderID}" rate limited -- Re-adding task to queue`, executionID);
-            userCache[ownerId].queue.add( async function() { await getFolderInfo(ownerId, folderID, parentExecutionID) });
+            app.userCache.getUser(ownerId).queue.add( async function() { await getFolderInfo(ownerId, folderID, parentExecutionID) });
             app.logger.log.debug({
                 label: "getFolderInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+                message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
             })
         } else {
-            app.logger.logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${userCache[ownerId].info.id}`, executionID);
+            app.logger.logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${app.userCache.getUser(ownerId).info.id}`, executionID);
         }
     }
 }
@@ -148,7 +149,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
 
     let item;
     try {
-        item = await userCache[ownerId].client.files.get(fileID,
+        item = await app.userCache.getUser(ownerId).client.files.get(fileID,
         {
             fields: config.boxItemFields
         })
@@ -171,24 +172,24 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, item, executionID) });
+        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
         app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
         })
 
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
             app.logger.logError(err, "getFileInfo", `Request for file "${fileID}" rate limited -- Re-adding task to queue`, executionID);
-            userCache[ownerId].queue.add( async function() { await getFileInfo(ownerId, fileID, parentExecutionID) });
+            app.userCache.getUser(ownerId).queue.add( async function() { await getFileInfo(ownerId, fileID, parentExecutionID) });
             app.logger.log.debug({
                 label: "getFileInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task for file ${fileID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+                message: `Added task for file ${fileID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
             })
         } else {
             app.logger.logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${ownerId}`, executionID);
@@ -219,7 +220,7 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
 
     let item;
     try {
-        item = await userCache[ownerId].client.weblinks.get(weblinkID,
+        item = await app.userCache.getUser(ownerId).client.weblinks.get(weblinkID,
         {
             fields: config.boxItemFields
         })
@@ -242,24 +243,24 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        userCache[ownerId].queue.add( async function() { performUserDefinedActions(ownerId, item, executionID) });
+        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
         app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
         })
 
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
             app.logger.logError(err, "getWeblinkInfo", `Request for weblink "${weblinkID}" rate limited -- Re-adding task to queue`, executionID);
-            userCache[ownerId].queue.add( async function() { await getWeblinkInfo(ownerId, weblinkID, parentExecutionID) });
+            app.userCache.getUser(ownerId).queue.add( async function() { await getWeblinkInfo(ownerId, weblinkID, parentExecutionID) });
             app.logger.log.debug({
                 label: "getWeblinkInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task for weblink ${weblinkID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+                message: `Added task for weblink ${weblinkID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
             })
         } else {
             app.logger.logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${ownerId}`, executionID);
@@ -327,7 +328,7 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
     let totalCount;
     try {
         do {
-            folderItems = await userCache[ownerId].client.folders.getItems(folderID, {
+            folderItems = await app.userCache.getUser(ownerId).client.folders.getItems(folderID, {
                 fields: config.boxItemFields,
                 offset: offset,
                 limit: 1000
@@ -351,7 +352,7 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
                 label: "getFolderItems",
                 action: "RETRIEVE_ROOT_ITEMS",
                 executionId: parentExecutionID,
-                message: `Retrieved ${allItems.length} of ${totalCount} root items for "${userCache[ownerId].info.name}" (${userCache[ownerId].info.id})`
+                message: `Retrieved ${allItems.length} of ${totalCount} root items for "${app.userCache.getUser(ownerId).info.name}" (${app.userCache.getUser(ownerId).info.id})`
             })
         } else {
             app.logger.log.info({
@@ -363,8 +364,8 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
         }
     } catch(err) {
         //Need to throw error here so that it propogates up to next try/catch
-        app.logger.logError(err, "getFolderItems", `Retrieval of child items for folder ${folderID} owned by ${userCache[ownerId].info.id}`, parentExecutionID);
-        throw Error(`Retrieval of child items for folder ${folderID} owned by ${userCache[ownerId].info.id} failed`);
+        app.logger.logError(err, "getFolderItems", `Retrieval of child items for folder ${folderID} owned by ${app.userCache.getUser(ownerId).info.id}`, parentExecutionID);
+        throw new Error(`Retrieval of child items for folder ${folderID} owned by ${app.userCache.getUser(ownerId).info.id} failed`);
     }
     
     return allItems;
@@ -389,7 +390,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
             label: "processFolderItems",
             action: "PREPARE_ROOT_ITEMS",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
-            message: `Beginning to traverse root items for "${userCache[ownerId].info.name}" (${userCache[ownerId].info.id})`
+            message: `Beginning to traverse root items for "${app.userCache.getUser(ownerId).info.name}" (${app.userCache.getUser(ownerId).info.id})`
         })
     } else {
         app.logger.log.info({
@@ -406,12 +407,12 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         items = await getFolderItems(ownerId, folderID, executionID);
     } catch(err) {
         app.logger.logError(err, "processFolderItems", `Error retrieving folder items -- Re-adding task to queue`, executionID);
-        userCache[ownerId].queue.add( async function() { await processFolderItems(ownerId, folderID, parentExecutionID, followChildItems, firstIteration) });
+        app.userCache.getUser(ownerId).queue.add( async function() { await processFolderItems(ownerId, folderID, parentExecutionID, followChildItems, firstIteration) });
         app.logger.log.debug({
             label: "processFolderItems",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task to process items for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+            message: `Added task to process items for folder ${folderID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
         })
         app.logger.log.warn({
             label: "processFolderItems",
@@ -426,12 +427,12 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
     //If this is the first iteration and not the root folder, take action on starting folder itself
     //This only applies if using whitelist configuration!
     if(firstIteration && folderID !== '0') {
-        userCache[ownerId].queue.add( async function() { await getFolderInfo(ownerId, folderID, executionID) });
+        app.userCache.getUser(ownerId).queue.add( async function() { await getFolderInfo(ownerId, folderID, executionID) });
         app.logger.log.debug({
             label: "getFolderInfo",
             action: "ADD_TO_QUEUE",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
-            message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+            message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
         })
     }
 
@@ -482,22 +483,22 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
 
         //PERFORM USER DEFINED ACTION(S)
         //Pass item object to user defined functions
-        userCache[ownerId].queue.add( async function() { await performUserDefinedActions(ownerId, items[i], executionID) });
+        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, items[i], executionID) });
         app.logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+            message: `Added task for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
         })
 
         //Only recurse if item is folder and if followChildItems is true
         if(items[i].type === "folder" && followChildItems) {
-            userCache[ownerId].queue.add( async function() { return await processFolderItems(ownerId, items[i].id, executionID) });
+            app.userCache.getUser(ownerId).queue.add( async function() { return await processFolderItems(ownerId, items[i].id, executionID) });
             app.logger.log.debug({
                 label: "processFolderItems",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task to process items for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${userCache[ownerId].queue.size}`
+                message: `Added task to process items for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
             })
         }
     };
@@ -531,11 +532,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
     try{
         const userInfo = await userClient.users.get(userClient.CURRENT_USER_ID)
 
-        userCache[userInfo.id] = { 
-            queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
-            client: userClient,
-            info: userInfo
-        };
+        app.userCache.addUser(userInfo, userClient);
 
         app.logger.log.info({
             label: "getUserItems",
@@ -551,15 +548,15 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
             message: `Successfully initialized a task queue for "${userInfo.name}" (${userInfo.id})`
         })
         
-        userCache[userInfo.id].queue.add( async function() { return await processFolderItems(userInfo.id, startingFolderID, executionID, followChildItems, true) } );
+        app.userCache.getUser(userInfo.id).queue.add( async function() { return await processFolderItems(userInfo.id, startingFolderID, executionID, followChildItems, true) } );
         app.logger.log.debug({
             label: "processFolderItems",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task to process items for folder ${startingFolderID} | Queue ${userInfo.id} size: ${userCache[userInfo.id].queue.size}`
+            message: `Added task to process items for folder ${startingFolderID} | Queue ${userInfo.id} size: ${app.userCache.getUser(userInfo.id).queue.size}`
         })
 
-        userCache[userInfo.id].queue.onIdle().then(() => {
+        app.userCache.getUser(userInfo.id).queue.onIdle().then(() => {
             app.logger.log.info({
                 label: "traverse",
                 action: "FINISHED_TASK_QUEUE",
@@ -663,12 +660,8 @@ async function traverse() {
         
                 const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
         
-                if (!userCache.hasOwnProperty(boxUser[0].id)) {
-                    userCache[boxUser[0].id] = { 
-                        queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
-                        client: userClient,
-                        info: boxUser[0]
-                    };
+                if (!app.userCache.checkUser(boxUser[0].id)) {
+                    app.userCache.addUser(boxUser[0], userClient);
 
                     app.logger.log.info({
                         label: "traverse",
@@ -679,28 +672,28 @@ async function traverse() {
                 }
 
                 if(normalizedRow.type === "file") {
-                    userCache[boxUser[0].id].queue.add( async function() { await getFileInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    app.userCache.getUser(boxUser[0].id).queue.add( async function() { await getFileInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
                     app.logger.log.debug({
                         label: "traverse",
                         action: "ADD_TO_QUEUE",
                         executionId: executionID,
-                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${app.userCache.getUser(boxUser[0].id).queue.size}`
                     })
                 } else if(normalizedRow.type === "folder") {
-                    userCache[boxUser[0].id].queue.add( async function() { await getFolderInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    app.userCache.getUser(boxUser[0].id).queue.add( async function() { await getFolderInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
                     app.logger.log.debug({
                         label: "traverse",
                         action: "ADD_TO_QUEUE",
                         executionId: executionID,
-                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${app.userCache.getUser(boxUser[0].id).queue.size}`
                     })
                 } else if(normalizedRow.type === "web_link") {
-                    userCache[boxUser[0].id].queue.add( async function() { await getWeblinkInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    app.userCache.getUser(boxUser[0].id).queue.add( async function() { await getWeblinkInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
                     app.logger.log.debug({
                         label: "traverse",
                         action: "ADD_TO_QUEUE",
                         executionId: executionID,
-                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache[boxUser[0].id].queue.size}`
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${app.userCache.getUser(boxUser[0].id).queue.size}`
                     })
                 }
             }

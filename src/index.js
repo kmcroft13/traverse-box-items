@@ -3,4 +3,5 @@ module.exports = {
     config : require('./config'),
     logger : require('./logger'),
     csv : require('./csv'),
+    userCache : require('./userCache'),
  }
