@@ -210,7 +210,7 @@ const logError = function(err, functionName, failedEvent, executionID) {
             action: "UNKNOWN_ERROR",
             executionId: executionID,
             message: failedEvent,
-            errorDetails: JSON.stringify(err)
+            errorDetails: err.stack
         });
     }
 }
