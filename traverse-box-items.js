@@ -27,11 +27,6 @@ const PQueue = require('p-queue');
 const app = require('./src');
 const actions = require('./user-defined-logic');
 
-//eval(fs.readFileSync('user-defined-logic.js')+'');
-
-//Initialize user cache
-//const userCache = {};
-
 ////  LOAD CONFIGURATIONS  ////////////////////////////////////////////////
 const config = app.config.loadConfigs();
 
@@ -75,7 +70,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
     })
 
     //Generate unique executionID for this loop
-    const executionID = (Math.random()* 1e20).toString(36)
+    const executionID = app.helpers.generateExecutionId();
 
     let item;
     try {
@@ -145,7 +140,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
     })
 
     //Generate unique executionID for this loop
-    const executionID = (Math.random()* 1e20).toString(36)
+    const executionID = app.helpers.generateExecutionId();
 
     let item;
     try {
@@ -216,7 +211,7 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
     })
 
     //Generate unique executionID for this loop
-    const executionID = (Math.random()* 1e20).toString(36)
+    const executionID = app.helpers.generateExecutionId();
 
     let item;
     try {
@@ -383,7 +378,7 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
 */
 async function processFolderItems(ownerId, folderID, parentExecutionID, followChildItems = true, firstIteration = false) {
     //Generate unique executionID for this loop
-    const executionID = (Math.random()* 1e20).toString(36)
+    const executionID = app.helpers.generateExecutionId();
     
     if(folderID === '0') {
         app.logger.log.info({
@@ -516,7 +511,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
 */
 async function getUserItems(userId, startingFolderID, followChildItems = true) {
     //Generate a unique execution ID to track loop execution across functions
-    const executionID = (Math.random()* 1e20).toString(36)
+    const executionID = app.helpers.generateExecutionId();
 
     app.logger.log.info({
         label: "getUserItems",
@@ -609,8 +604,7 @@ async function traverse() {
         
             for (const [index, row] of parsedCsv.entries()) {
                 //Generate unique executionID for this loop
-                const executionID = (Math.random()* 1e20).toString(36);
-
+                const executionID = app.helpers.generateExecutionId();
                 const rowValidationObj = app.csv.validateRow(index, row);
 
                 if(!rowValidationObj.validationsPassed) {
