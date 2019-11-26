@@ -6,8 +6,8 @@ const fs = require('fs');
 const path = require('path');
 
 //Load script configs
-const configLoader = require('./config');
-const config = configLoader.loadConfigs();
+const helpers = require('./helpers');
+const config = helpers.loadConfigs();
 
 ////  CONSTANTS  //////////////////////////////////////////////////////////
 const runtimeLogsPath = './runtimeLogs';

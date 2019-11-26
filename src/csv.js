@@ -42,7 +42,7 @@ const validateRow = function(index, row) {
             key: null
         }
     };
-
+    
     if(row.hasOwnProperty('owner_login') && row['owner_login'] != "") {
         rowValidation.ownerLogin.exists = true;
         rowValidation.ownerLogin.key = 'owner_login';

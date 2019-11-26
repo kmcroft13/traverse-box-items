@@ -1,7 +1,8 @@
 //Require PQueue to control tasks
 const PQueue = require('p-queue');
-const config = require('./config');
-const logger = require('./logger');
+//Load script configs
+const helpers = require('./helpers');
+const config = helpers.loadConfigs();
 
 const userCache = {};
 
@@ -14,7 +15,7 @@ const addUser = function(userObj, userClient) {
     }
     try {
         userCache[userObj.id] = { 
-            queue: new PQueue({interval: 1000, intervalCap: config.loadConfigs().maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
+            queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
             client: userClient,
             info: userObj
         };

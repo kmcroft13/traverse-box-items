@@ -1,4 +1,5 @@
 const app = require('./src');
+const { helpers, logger, csv, userCache } = app;
 
 ////  USER DEFINED LOGIC  /////////////////////////////////////////////////
 //This function is called for each file processed by traverse-box-items.js
@@ -14,7 +15,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     //Generate unique executionID for this loop
     const executionID = (Math.random()* 1e20).toString(36)
     
-    app.logger.log.debug({
+    logger.log.debug({
         label: "performUserDefinedActions",
         action: "PREPARE_USER_DEFINED_ACTION",
         executionId: `${executionID} | Parent: ${parentExecutionID}`,
@@ -22,13 +23,13 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     })
 
     // Initialize variables for user object, user API client, and user task queue
-    const client = app.userCache.getUser(ownerId).client;
-    const clientUserObj = app.userCache.getUser(ownerId).info;
-    const queue = app.userCache.getUser(ownerId).queue;
+    const client = userCache.getUser(ownerId).client;
+    const clientUserObj = userCache.getUser(ownerId).info;
+    const queue = userCache.getUser(ownerId).queue;
 
 
     //[OPTIONAL] Take action on ALL OBJECTS here
-    if(app.config.loadConfigs().modifyData) {
+    if(helpers.loadConfigs().modifyData) {
         //ACTUALLY MODIFY DATA
 
     } else {
@@ -39,7 +40,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     if(itemObj.type === "folder") {
         //[OPTIONAL] Take additional action on FOLDER OBJECTS ONLY here
 
-        if(app.config.loadConfigs().modifyData) {
+        if(helpers.loadConfigs().modifyData) {
             //ACTUALLY MODIFY DATA
         } else {
             //PERFORM LOGGING FOR SIMULATION
@@ -48,7 +49,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     } else if(itemObj.type === "file") {
         //[OPTIONAL] Take additional action on FILE OBJECTS ONLY here
 
-        if(app.config.loadConfigs().modifyData) {
+        if(helpers.loadConfigs().modifyData) {
             //ACTUALLY MODIFY DATA
         } else {
             //PERFORM LOGGING FOR SIMULATION
@@ -56,7 +57,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     } else if(itemObj.type === "web_link") {
         //[OPTIONAL] Take additional action on ALL NON FILE OR FOLDER OBJECTS here
 
-        if(app.config.loadConfigs().modifyData) {
+        if(helpers.loadConfigs().modifyData) {
             //ACTUALLY MODIFY DATA
         } else {
             //PERFORM LOGGING FOR SIMULATION

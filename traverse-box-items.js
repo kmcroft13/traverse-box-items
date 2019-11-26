@@ -19,16 +19,15 @@
 ////  LOAD MODULES  ///////////////////////////////////////////////////////
 // Require module for Box SDK
 const BoxSDK = require('box-node-sdk');
-//Require node fs module
-const fs = require('fs');
 //Require PQueue to control tasks
 const PQueue = require('p-queue');
 //Require core app source logic
 const app = require('./src');
+const { helpers, logger, csv, userCache } = app;
 const actions = require('./user-defined-logic');
 
 ////  LOAD CONFIGURATIONS  ////////////////////////////////////////////////
-const config = app.config.loadConfigs();
+const config = helpers.loadConfigs();
 
 // Initialize the Box SDK from config file
 const sdk = new BoxSDK({
@@ -62,7 +61,7 @@ const usersTaskQueue = new PQueue({concurrency: config.maxConcurrentUsers});
 */
 async function getFolderInfo(ownerId, folderID, parentExecutionID) {
 
-    app.logger.log.info({
+    logger.log.info({
         label: "getFolderInfo",
         action: "PREPARE_FOLDER_INFO",
         executionId: parentExecutionID,
@@ -70,16 +69,16 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
     })
 
     //Generate unique executionID for this loop
-    const executionID = app.helpers.generateExecutionId();
+    const executionID = helpers.generateExecutionId();
 
     let item;
     try {
-        item = await app.userCache.getUser(ownerId).client.folders.get(folderID,
+        item = await userCache.getUser(ownerId).client.folders.get(folderID,
         {
             fields: config.boxItemFields
         })
 
-        app.logger.log.info({
+        logger.log.info({
             label: "getFolderInfo",
             action: "RETRIEVE_FOLDER_INFO",
             executionId: executionID,
@@ -87,7 +86,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
         })
 
         if(config.auditTraversal) {
-            app.logger.logAudit(
+            logger.logAudit(
                 "GET_ITEM", 
                 item, 
                 `Successfully retrieved item`, 
@@ -97,27 +96,27 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
-        app.logger.log.debug({
+        userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
+        logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
         })
     
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            app.logger.logError(err, "getFolderInfo", `Request for folder "${folderID}" rate limited -- Re-adding task to queue`, executionID);
-            app.userCache.getUser(ownerId).queue.add( async function() { await getFolderInfo(ownerId, folderID, parentExecutionID) });
-            app.logger.log.debug({
+            logger.logError(err, "getFolderInfo", `Request for folder "${folderID}" rate limited -- Re-adding task to queue`, executionID);
+            userCache.getUser(ownerId).queue.add( async function() { await getFolderInfo(ownerId, folderID, parentExecutionID) });
+            logger.log.debug({
                 label: "getFolderInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+                message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
             })
         } else {
-            app.logger.logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${app.userCache.getUser(ownerId).info.id}`, executionID);
+            logger.logError(err, "getFolderInfo", `retrieval of info for folder ${folderID} owned by ${userCache.getUser(ownerId).info.id}`, executionID);
         }
     }
 }
@@ -132,7 +131,7 @@ async function getFolderInfo(ownerId, folderID, parentExecutionID) {
 */
 async function getFileInfo(ownerId, fileID, parentExecutionID) {
 
-    app.logger.log.info({
+    logger.log.info({
         label: "getFileInfo",
         action: "PREPARE_FILE_INFO",
         executionId: parentExecutionID,
@@ -140,16 +139,16 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
     })
 
     //Generate unique executionID for this loop
-    const executionID = app.helpers.generateExecutionId();
+    const executionID = helpers.generateExecutionId();
 
     let item;
     try {
-        item = await app.userCache.getUser(ownerId).client.files.get(fileID,
+        item = await userCache.getUser(ownerId).client.files.get(fileID,
         {
             fields: config.boxItemFields
         })
 
-        app.logger.log.info({
+        logger.log.info({
             label: "getFileInfo",
             action: "RETRIEVE_FILE_INFO",
             executionId: executionID,
@@ -157,7 +156,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
         })
 
         if(config.auditTraversal) {
-            app.logger.logAudit(
+            logger.logAudit(
                 "GET_ITEM", 
                 item, 
                 `Successfully retrieved item`, 
@@ -167,27 +166,27 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
-        app.logger.log.debug({
+        userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
+        logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
         })
 
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            app.logger.logError(err, "getFileInfo", `Request for file "${fileID}" rate limited -- Re-adding task to queue`, executionID);
-            app.userCache.getUser(ownerId).queue.add( async function() { await getFileInfo(ownerId, fileID, parentExecutionID) });
-            app.logger.log.debug({
+            logger.logError(err, "getFileInfo", `Request for file "${fileID}" rate limited -- Re-adding task to queue`, executionID);
+            userCache.getUser(ownerId).queue.add( async function() { await getFileInfo(ownerId, fileID, parentExecutionID) });
+            logger.log.debug({
                 label: "getFileInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task for file ${fileID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+                message: `Added task for file ${fileID} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
             })
         } else {
-            app.logger.logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${ownerId}`, executionID);
+            logger.logError(err, "getFileInfo", `retrieval of info for file ${fileID} owned by ${ownerId}`, executionID);
         }
     }
 }
@@ -203,7 +202,7 @@ async function getFileInfo(ownerId, fileID, parentExecutionID) {
 */
 async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
 
-    app.logger.log.info({
+    logger.log.info({
         label: "getWeblinkInfo",
         action: "PREPARE_WEBLINK_INFO",
         executionId: parentExecutionID,
@@ -211,16 +210,16 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
     })
 
     //Generate unique executionID for this loop
-    const executionID = app.helpers.generateExecutionId();
+    const executionID = helpers.generateExecutionId();
 
     let item;
     try {
-        item = await app.userCache.getUser(ownerId).client.weblinks.get(weblinkID,
+        item = await userCache.getUser(ownerId).client.weblinks.get(weblinkID,
         {
             fields: config.boxItemFields
         })
 
-        app.logger.log.info({
+        logger.log.info({
             label: "getWeblinkInfo",
             action: "RETRIEVE_WEBLINK_INFO",
             executionId: executionID,
@@ -228,7 +227,7 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
         })
 
         if(config.auditTraversal) {
-            app.logger.logAudit(
+            logger.logAudit(
                 "GET_ITEM", 
                 item, 
                 `Successfully retrieved item`, 
@@ -238,27 +237,27 @@ async function getWeblinkInfo(ownerId, weblinkID, parentExecutionID) {
     
         //PERFORM USER DEFINED ACTION(S) FOR THIS SPECIFIC OBJECT
         //Pass item object to user defined functions
-        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
-        app.logger.log.debug({
+        userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, item, executionID) });
+        logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+            message: `Added task for ${item.type} ${item.id} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
         })
 
         return item;
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            app.logger.logError(err, "getWeblinkInfo", `Request for weblink "${weblinkID}" rate limited -- Re-adding task to queue`, executionID);
-            app.userCache.getUser(ownerId).queue.add( async function() { await getWeblinkInfo(ownerId, weblinkID, parentExecutionID) });
-            app.logger.log.debug({
+            logger.logError(err, "getWeblinkInfo", `Request for weblink "${weblinkID}" rate limited -- Re-adding task to queue`, executionID);
+            userCache.getUser(ownerId).queue.add( async function() { await getWeblinkInfo(ownerId, weblinkID, parentExecutionID) });
+            logger.log.debug({
                 label: "getWeblinkInfo",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task for weblink ${weblinkID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+                message: `Added task for weblink ${weblinkID} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
             })
         } else {
-            app.logger.logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${ownerId}`, executionID);
+            logger.logError(err, "getWeblinkInfo", `retrieval of info for weblink ${weblinkID} owned by ${ownerId}`, executionID);
         }
     }
 }
@@ -286,7 +285,7 @@ async function getEnterpriseUsers(client) {
             offset = enterpriseUsers.offset + enterpriseUsers.limit;
             totalCount = enterpriseUsers.total_count;
 
-            app.logger.log.info({
+            logger.log.info({
                 label: "getEnterpriseUsers",
                 action: "RETRIEVE_ENTERPRISE_USERS_PAGE",
                 executionId: "N/A",
@@ -295,14 +294,14 @@ async function getEnterpriseUsers(client) {
         }
         while(offset <= totalCount);
 
-        app.logger.log.info({
+        logger.log.info({
             label: "getEnterpriseUsers",
             action: "RETRIEVE_ENTERPRISE_USERS",
             executionId: "N/A",
             message: `Successfully retrieved all enterprise users`
         })
     } catch(err) {
-        app.logger.logError(err, "getEnterpriseUsers", `Retrieval of enterprise users`, "N/A")
+        logger.logError(err, "getEnterpriseUsers", `Retrieval of enterprise users`, "N/A")
     }
     
     return allUsers;
@@ -323,7 +322,7 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
     let totalCount;
     try {
         do {
-            folderItems = await app.userCache.getUser(ownerId).client.folders.getItems(folderID, {
+            folderItems = await userCache.getUser(ownerId).client.folders.getItems(folderID, {
                 fields: config.boxItemFields,
                 offset: offset,
                 limit: 1000
@@ -333,7 +332,7 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
             offset = folderItems.offset + folderItems.limit;
             totalCount = folderItems.total_count;
 
-            app.logger.log.info({
+            logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_FOLDER_ITEMS_PAGE",
                 executionId: parentExecutionID,
@@ -343,14 +342,14 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
         while(offset <= totalCount);
 
         if(folderID === '0') {
-            app.logger.log.info({
+            logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_ROOT_ITEMS",
                 executionId: parentExecutionID,
-                message: `Retrieved ${allItems.length} of ${totalCount} root items for "${app.userCache.getUser(ownerId).info.name}" (${app.userCache.getUser(ownerId).info.id})`
+                message: `Retrieved ${allItems.length} of ${totalCount} root items for "${userCache.getUser(ownerId).info.name}" (${userCache.getUser(ownerId).info.id})`
             })
         } else {
-            app.logger.log.info({
+            logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_CHILD_ITEMS",
                 executionId: parentExecutionID,
@@ -359,8 +358,8 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
         }
     } catch(err) {
         //Need to throw error here so that it propogates up to next try/catch
-        app.logger.logError(err, "getFolderItems", `Retrieval of child items for folder ${folderID} owned by ${app.userCache.getUser(ownerId).info.id}`, parentExecutionID);
-        throw new Error(`Retrieval of child items for folder ${folderID} owned by ${app.userCache.getUser(ownerId).info.id} failed`);
+        logger.logError(err, "getFolderItems", `Retrieval of child items for folder ${folderID} owned by ${userCache.getUser(ownerId).info.id}`, parentExecutionID);
+        throw new Error(`Retrieval of child items for folder ${folderID} owned by ${userCache.getUser(ownerId).info.id} failed`);
     }
     
     return allItems;
@@ -378,17 +377,17 @@ async function getFolderItems(ownerId, folderID, parentExecutionID) {
 */
 async function processFolderItems(ownerId, folderID, parentExecutionID, followChildItems = true, firstIteration = false) {
     //Generate unique executionID for this loop
-    const executionID = app.helpers.generateExecutionId();
+    const executionID = helpers.generateExecutionId();
     
     if(folderID === '0') {
-        app.logger.log.info({
+        logger.log.info({
             label: "processFolderItems",
             action: "PREPARE_ROOT_ITEMS",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
-            message: `Beginning to traverse root items for "${app.userCache.getUser(ownerId).info.name}" (${app.userCache.getUser(ownerId).info.id})`
+            message: `Beginning to traverse root items for "${userCache.getUser(ownerId).info.name}" (${userCache.getUser(ownerId).info.id})`
         })
     } else {
-        app.logger.log.info({
+        logger.log.info({
             label: "processFolderItems",
             action: "PREPARE_CHILD_ITEMS",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
@@ -401,15 +400,15 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
     try {
         items = await getFolderItems(ownerId, folderID, executionID);
     } catch(err) {
-        app.logger.logError(err, "processFolderItems", `Error retrieving folder items -- Re-adding task to queue`, executionID);
-        app.userCache.getUser(ownerId).queue.add( async function() { await processFolderItems(ownerId, folderID, parentExecutionID, followChildItems, firstIteration) });
-        app.logger.log.debug({
+        logger.logError(err, "processFolderItems", `Error retrieving folder items -- Re-adding task to queue`, executionID);
+        userCache.getUser(ownerId).queue.add( async function() { await processFolderItems(ownerId, folderID, parentExecutionID, followChildItems, firstIteration) });
+        logger.log.debug({
             label: "processFolderItems",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task to process items for folder ${folderID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+            message: `Added task to process items for folder ${folderID} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
         })
-        app.logger.log.warn({
+        logger.log.warn({
             label: "processFolderItems",
             action: "KILL_TASK",
             executionId: executionID,
@@ -422,12 +421,12 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
     //If this is the first iteration and not the root folder, take action on starting folder itself
     //This only applies if using whitelist configuration!
     if(firstIteration && folderID !== '0') {
-        app.userCache.getUser(ownerId).queue.add( async function() { await getFolderInfo(ownerId, folderID, executionID) });
-        app.logger.log.debug({
+        userCache.getUser(ownerId).queue.add( async function() { await getFolderInfo(ownerId, folderID, executionID) });
+        logger.log.debug({
             label: "getFolderInfo",
             action: "ADD_TO_QUEUE",
             executionId: `${executionID} | Parent: ${parentExecutionID}`,
-            message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+            message: `Added task for folder ${folderID} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
         })
     }
 
@@ -435,7 +434,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         //If getting root items, check if item is owned by the current user and if skip nonOwnedItems flag is true
         if(folderID === '0' && items[i].owned_by.id !== ownerId && config.nonOwnedItems.skip) {
             //Log item then skip it
-            app.logger.log.debug({
+            logger.log.debug({
                 label: "processFolderItems",
                 action: "IGNORE_NONOWNED_ITEM",
                 executionId: executionID,
@@ -443,7 +442,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
             })
 
             if(config.nonOwnedItems.audit) {
-                app.logger.logAudit(
+                logger.logAudit(
                     "SKIP_ITEM", 
                     items[i], 
                     `Successfully retrieved skipped item`, 
@@ -457,7 +456,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         //If blacklist is enabled and if folder is included in blacklist
         if(items[i].type === "folder" && config.blacklist.enabled && config.blacklist.folders.includes(items[i].id)) {
             //Log item then skip it
-            app.logger.log.warn({
+            logger.log.warn({
                 label: "processFolderItems",
                 action: "IGNORE_BLACKLIST_ITEM",
                 executionId: executionID,
@@ -468,7 +467,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
         }
 
         if(config.auditTraversal) {
-            app.logger.logAudit(
+            logger.logAudit(
                 "GET_ITEM", 
                 items[i], 
                 `Successfully retrieved item`, 
@@ -478,22 +477,22 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
 
         //PERFORM USER DEFINED ACTION(S)
         //Pass item object to user defined functions
-        app.userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, items[i], executionID) });
-        app.logger.log.debug({
+        userCache.getUser(ownerId).queue.add( async function() { await actions.performUserDefinedActions(ownerId, items[i], executionID) });
+        logger.log.debug({
             label: "performUserDefinedActions",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+            message: `Added task for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
         })
 
         //Only recurse if item is folder and if followChildItems is true
         if(items[i].type === "folder" && followChildItems) {
-            app.userCache.getUser(ownerId).queue.add( async function() { return await processFolderItems(ownerId, items[i].id, executionID) });
-            app.logger.log.debug({
+            userCache.getUser(ownerId).queue.add( async function() { return await processFolderItems(ownerId, items[i].id, executionID) });
+            logger.log.debug({
                 label: "processFolderItems",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
-                message: `Added task to process items for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${app.userCache.getUser(ownerId).queue.size}`
+                message: `Added task to process items for ${items[i].type} ${items[i].id} | Queue ${ownerId} size: ${userCache.getUser(ownerId).queue.size}`
             })
         }
     };
@@ -511,9 +510,9 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
 */
 async function getUserItems(userId, startingFolderID, followChildItems = true) {
     //Generate a unique execution ID to track loop execution across functions
-    const executionID = app.helpers.generateExecutionId();
+    const executionID = helpers.generateExecutionId();
 
-    app.logger.log.info({
+    logger.log.info({
         label: "getUserItems",
         action: "PREPARE_GET_ITEMS",
         executionId: executionID,
@@ -527,32 +526,32 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
     try{
         const userInfo = await userClient.users.get(userClient.CURRENT_USER_ID)
 
-        app.userCache.addUser(userInfo, userClient);
+        userCache.addUser(userInfo, userClient);
 
-        app.logger.log.info({
+        logger.log.info({
             label: "getUserItems",
             action: "RETRIEVE_USER_INFO",
             executionId: executionID,
             message: `Successfully retrieved user info for "${userInfo.name}" (${userInfo.id})`
         })
 
-        app.logger.log.info({
+        logger.log.info({
             label: "traverse",
             action: "INITIALIZE_TASK_QUEUE",
             executionId: userInfo.id,
             message: `Successfully initialized a task queue for "${userInfo.name}" (${userInfo.id})`
         })
         
-        app.userCache.getUser(userInfo.id).queue.add( async function() { return await processFolderItems(userInfo.id, startingFolderID, executionID, followChildItems, true) } );
-        app.logger.log.debug({
+        userCache.getUser(userInfo.id).queue.add( async function() { return await processFolderItems(userInfo.id, startingFolderID, executionID, followChildItems, true) } );
+        logger.log.debug({
             label: "processFolderItems",
             action: "ADD_TO_QUEUE",
             executionId: executionID,
-            message: `Added task to process items for folder ${startingFolderID} | Queue ${userInfo.id} size: ${app.userCache.getUser(userInfo.id).queue.size}`
+            message: `Added task to process items for folder ${startingFolderID} | Queue ${userInfo.id} size: ${userCache.getUser(userInfo.id).queue.size}`
         })
 
-        app.userCache.getUser(userInfo.id).queue.onIdle().then(() => {
-            app.logger.log.info({
+        userCache.getUser(userInfo.id).queue.onIdle().then(() => {
+            logger.log.info({
                 label: "traverse",
                 action: "FINISHED_TASK_QUEUE",
                 executionId: userInfo.id,
@@ -560,7 +559,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
             })
         });
     } catch(err) {
-        app.logger.logError(err, "getUserItems", `Retrieval of user info for user "${userId}"`, executionID)
+        logger.logError(err, "getUserItems", `Retrieval of user info for user "${userId}"`, executionID)
     }
 }
 
@@ -573,7 +572,7 @@ async function traverse() {
 
     //Check if whitelist is enabled
     if(config.csv.enabled) {
-        app.logger.log.debug({
+        logger.log.debug({
             label: "traverse",
             action: "CSV_OPTION_ENABLED",
             executionId: "N/A",
@@ -581,18 +580,18 @@ async function traverse() {
         })
 
         //Attempt to read and parse CSV file
-        const parsedCsv = app.csv.parseFile(config.csv.filePath);
-        const headerValidationObj = app.csv.validateRow(0, parsedCsv[0]);
+        const parsedCsv = csv.parseFile(config.csv.filePath);
+        const headerValidationObj = csv.validateRow(0, parsedCsv[0]);
 
         if(!headerValidationObj.validationsPassed) {
-            app.logger.log.error({
+            logger.log.error({
                 label: "traverse",
                 action: "INCORRECT_HEADER",
                 executionId: "N/A",
                 message: `Could not parse CSV because of missing required header (${headerValidationObj.validationErrors.join(' , ')})`
             })
         } else {
-            app.logger.log.debug({
+            logger.log.debug({
                 label: "traverse",
                 action: "HEADER_VALIDATIONS_PASSED",
                 executionId: "N/A",
@@ -604,11 +603,11 @@ async function traverse() {
         
             for (const [index, row] of parsedCsv.entries()) {
                 //Generate unique executionID for this loop
-                const executionID = app.helpers.generateExecutionId();
-                const rowValidationObj = app.csv.validateRow(index, row);
+                const executionID = helpers.generateExecutionId();
+                const rowValidationObj = csv.validateRow(index, row);
 
                 if(!rowValidationObj.validationsPassed) {
-                    app.logger.log.warn({
+                    logger.log.warn({
                         label: "traverse",
                         action: "INCOMPLETE_ROW",
                         executionId: "N/A",
@@ -617,7 +616,7 @@ async function traverse() {
                     continue;
                 }
 
-                const normalizedRow = app.csv.normalizeRow(index, row, rowValidationObj);
+                const normalizedRow = csv.normalizeRow(index, row, rowValidationObj);
 
                 //Continue with row processing
                 const boxUser = enterpriseUsers.filter( user => user.login === normalizedRow.ownerLogin);
@@ -625,7 +624,7 @@ async function traverse() {
                 //If user in inactive in Box
                 if(!boxUser[0]) {
                     //Log user then skip it
-                    app.logger.log.warn({
+                    logger.log.warn({
                         label: "traverse",
                         action: "USER_NOT_FOUND",
                         executionId: executionID,
@@ -635,7 +634,7 @@ async function traverse() {
                     continue;
                 } else if(boxUser[0].status !== "active") {
                     //Log user then skip it
-                    app.logger.log.warn({
+                    logger.log.warn({
                         label: "traverse",
                         action: "NON_ACTIVE_USER",
                         executionId: executionID,
@@ -645,7 +644,7 @@ async function traverse() {
                     continue;
                 };
         
-                app.logger.log.info({
+                logger.log.info({
                     label: "traverse",
                     action: "PARSE_CSV_ROW",
                     executionId: executionID,
@@ -654,10 +653,10 @@ async function traverse() {
         
                 const userClient = sdk.getAppAuthClient('user', boxUser[0].id);
         
-                if (!app.userCache.checkUser(boxUser[0].id)) {
-                    app.userCache.addUser(boxUser[0], userClient);
+                if (!userCache.checkUser(boxUser[0].id)) {
+                    userCache.addUser(boxUser[0], userClient);
 
-                    app.logger.log.info({
+                    logger.log.info({
                         label: "traverse",
                         action: "INITIALIZE_TASK_QUEUE",
                         executionId: boxUser[0].id,
@@ -666,35 +665,35 @@ async function traverse() {
                 }
 
                 if(normalizedRow.type === "file") {
-                    app.userCache.getUser(boxUser[0].id).queue.add( async function() { await getFileInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
-                    app.logger.log.debug({
+                    userCache.getUser(boxUser[0].id).queue.add( async function() { await getFileInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    logger.log.debug({
                         label: "traverse",
                         action: "ADD_TO_QUEUE",
                         executionId: executionID,
-                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${app.userCache.getUser(boxUser[0].id).queue.size}`
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache.getUser(boxUser[0].id).queue.size}`
                     })
                 } else if(normalizedRow.type === "folder") {
-                    app.userCache.getUser(boxUser[0].id).queue.add( async function() { await getFolderInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
-                    app.logger.log.debug({
+                    userCache.getUser(boxUser[0].id).queue.add( async function() { await getFolderInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    logger.log.debug({
                         label: "traverse",
                         action: "ADD_TO_QUEUE",
                         executionId: executionID,
-                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${app.userCache.getUser(boxUser[0].id).queue.size}`
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache.getUser(boxUser[0].id).queue.size}`
                     })
                 } else if(normalizedRow.type === "web_link") {
-                    app.userCache.getUser(boxUser[0].id).queue.add( async function() { await getWeblinkInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
-                    app.logger.log.debug({
+                    userCache.getUser(boxUser[0].id).queue.add( async function() { await getWeblinkInfo(boxUser[0].id, normalizedRow.itemId, executionID) });
+                    logger.log.debug({
                         label: "traverse",
                         action: "ADD_TO_QUEUE",
                         executionId: executionID,
-                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${app.userCache.getUser(boxUser[0].id).queue.size}`
+                        message: `PARSED CSV ROW ${index + 1}: Added task for ${normalizedRow.type} ${normalizedRow.itemId} | Queue ${boxUser[0].id} size: ${userCache.getUser(boxUser[0].id).queue.size}`
                     })
                 }
             }
         }
 
     } else if(config.whitelist.enabled) {
-        app.logger.log.info({
+        logger.log.info({
             label: "traverse",
             action: "WHITELIST",
             executionId: "N/A",
@@ -705,7 +704,7 @@ async function traverse() {
             //Check if we should recurse through child items for this user's whitelist
             for (let folderID in config.whitelist.items[i].folderIDs) {
                 usersTaskQueue.add( async function() { await getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems) });
-                app.logger.log.info({
+                logger.log.info({
                     label: "traverse",
                     action: "CREATED_TRAVERSAL_TASK",
                     executionId: "N/A",
@@ -722,7 +721,7 @@ async function traverse() {
             //Check if user is included in blacklist
             if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
                 //Log item then skip it
-                app.logger.log.warn({
+                logger.log.warn({
                     label: "traverse",
                     action: "IGNORE_USER",
                     executionId: "N/A",
@@ -735,7 +734,7 @@ async function traverse() {
             //If user in inactive in Box
             if(enterpriseUsers[i].status !== "active") {
                 //Log user then skip it
-                app.logger.log.warn({
+                logger.log.warn({
                     label: "traverse",
                     action: "NON_ACTIVE_USER",
                     executionId: "N/A",
@@ -746,7 +745,7 @@ async function traverse() {
             };
 
             usersTaskQueue.add( async function() { await getUserItems(enterpriseUsers[i].id, '0') });
-            app.logger.log.info({
+            logger.log.info({
                 label: "traverse",
                 action: "CREATED_TRAVERSAL_TASK",
                 executionId: "N/A",
@@ -762,7 +761,7 @@ async function traverse() {
 */
 async function index() {
 
-    app.logger.log.info({
+    logger.log.info({
         label: "index",
         action: "INITIALIZE_TRAVERSAL_TASKS",
         executionId: "N/A",
@@ -771,7 +770,7 @@ async function index() {
 
     await traverse();
 
-    app.logger.log.info({
+    logger.log.info({
         label: "index",
         action: "TRAVERSAL_TASKS_INITIALIZED",
         executionId: "N/A",
