@@ -1,6 +1,6 @@
 //Require modules from Winston (logging utility)
 const { createLogger, format, transports } = require('winston');
-const { combine, timestamp, label, printf } = format;
+const { combine, timestamp, printf, colorize } = format;
 //Require node fs and path modules
 const fs = require('fs');
 const path = require('path');
@@ -22,11 +22,11 @@ if (!fs.existsSync(auditLogsPath)){
 }
 
 const logFormat = printf(info => {
-  return `${info.timestamp}\t${info.level.toUpperCase()}\t${info.executionId}\t${info.label}\t${info.action.toUpperCase()}\t${info.message}\t${info.errorDetails ? `\t${info.errorDetails}` : ``}`;
+  return `${info.timestamp}\t${info.level}\t${info.executionId}\t${info.label}\t${info.action}\t${info.message}\t${info.errorDetails ? `\t${info.errorDetails}` : ``}`;
 });
 
 const actionFormat = printf(info => {
-    return `${info.time ? `"${info.time}` : `"${info.timestamp}`}","${info.label.toUpperCase()}","${info.executionId}","${info.itemID}","${info.itemName}","${info.itemType}","${info.ownedByEmail}","${info.ownedByID}","${info.pathByNames}","${info.pathByIDs}","${info.itemCreatedAt}","${info.modifiedAt}","${info.size}","${info.sharedLink}","${info.sharedLinkAccess}","${info.message}"`;
+    return `${info.time ? `"${info.time}` : `"${info.timestamp}`}","${info.label}","${info.executionId}","${info.itemID}","${info.itemName}","${info.itemType}","${info.ownedByEmail}","${info.ownedByID}","${info.pathByNames}","${info.pathByIDs}","${info.itemCreatedAt}","${info.modifiedAt}","${info.size}","${info.sharedLink}","${info.sharedLinkAccess}","${info.message}"`;
   });
 
 const customLogLevels = {
@@ -37,11 +37,28 @@ const customLogLevels = {
 
 const log = createLogger({
     format: combine(
+        format(info => {
+            info.level = info.level.toUpperCase()
+            info.action = info.action.toUpperCase()
+            return info;
+        })(),
         timestamp(),
         logFormat
     ),
     transports: [
-        new transports.Console({ level: 'debug', colorize: true }),
+        new transports.Console({ 
+            level: 'debug',
+            format: combine(
+                format(info => {
+                    info.level = info.level.toUpperCase()
+                    info.action = info.action.toUpperCase()
+                    return info;
+                })(),
+                colorize(),
+                timestamp(),
+                logFormat
+            ),
+        }),
         new transports.File({ filename: path.join(runtimeLogsPath, '/scriptLog-error.log'), level: 'error' }),
         new transports.File({ filename: path.join(runtimeLogsPath, '/scriptLog-combined.log'), level: config.logLevel || 'info' })
     ],
@@ -55,6 +72,10 @@ const d = new Date();
 const datestring = ("0"+(d.getMonth()+1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2) + "-" + d.getFullYear() + "_" + ("0" + d.getHours()).slice(-2) + "-" + ("0" + d.getMinutes()).slice(-2);
 const auditor = createLogger({
     format: combine(
+        format(info => {
+            info.level = info.level.toUpperCase()
+            return info;
+        })(),
         timestamp(),
         actionFormat
     ),
