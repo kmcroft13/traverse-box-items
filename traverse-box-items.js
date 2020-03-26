@@ -316,44 +316,54 @@ async function getEnterpriseUsers(client) {
  * returns [object] array of folder and file objects
 */
 async function getFolderItems(ownerId, folderID, parentExecutionID) {
+    let pageNum = 0;
     let folderItems;
     let allItems = [];
-    let offset;
-    let totalCount;
+    let marker = 0;
+    let limit = 1000;
+
     try {
         do {
-            folderItems = await userCache.getUser(ownerId).client.folders.getItems(folderID, {
-                fields: config.boxItemFields,
-                offset: offset,
-                limit: 1000
-            });
-            
+            pageNum++;
+            if (marker === 0) {
+                folderItems = await userCache.getUser(ownerId).client.folders.getItems(folderID, {
+                    fields: config.boxItemFields,
+                    usemarker: true,
+                    limit: limit
+                });
+            } else {
+                folderItems = await userCache.getUser(ownerId).client.folders.getItems(folderID, {
+                    fields: config.boxItemFields,
+                    usemarker: true,
+                    marker: marker,
+                    limit: limit
+                });
+            }
             allItems = allItems.concat(folderItems.entries);
-            offset = folderItems.offset + folderItems.limit;
-            totalCount = folderItems.total_count;
+            marker = folderItems.next_marker;
 
             logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_FOLDER_ITEMS_PAGE",
                 executionId: parentExecutionID,
-                message: `Retrieved ${allItems.length} of ${totalCount} items from folder ${folderID}`
+                message: `Retrieved page ${pageNum}. Total of ${allItems.length} items found for folder ${folderID}`
             })
         }
-        while(offset <= totalCount);
+        while(folderItems.next_marker);
 
         if(folderID === '0') {
             logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_ROOT_ITEMS",
                 executionId: parentExecutionID,
-                message: `Retrieved ${allItems.length} of ${totalCount} root items for "${userCache.getUser(ownerId).info.name}" (${userCache.getUser(ownerId).info.id})`
+                message: `Retrieved ${allItems.length} root items for "${userCache.getUser(ownerId).info.name}" (${userCache.getUser(ownerId).info.id})`
             })
         } else {
             logger.log.info({
                 label: "getFolderItems",
                 action: "RETRIEVE_CHILD_ITEMS",
                 executionId: parentExecutionID,
-                message: `Retrieved ${allItems.length} of ${totalCount} child items for folder ${folderID}`
+                message: `Retrieved ${allItems.length} child items for folder ${folderID}`
             })
         }
     } catch(err) {
@@ -701,16 +711,14 @@ async function traverse() {
         })
 
         for (let i in config.whitelist.items) {
-            console.log(config.whitelist.items);
             //Check if we should recurse through child items for this user's whitelist
             for (let folderID of config.whitelist.items[i].folderIDs) {
-                console.log(folderID);
                 usersTaskQueue.add( async function() { await getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems) });
                 logger.log.info({
                     label: "traverse",
                     action: "CREATED_TRAVERSAL_TASK",
                     executionId: "N/A",
-                    message: `Created a traversal task for folder ${folderId} owned by ${config.whitelist.items[i].ownerID}) | Users task queue size: ${usersTaskQueue.size}`
+                    message: `Created a traversal task for folder ${folderID} owned by ${config.whitelist.items[i].ownerID}) | Users task queue size: ${usersTaskQueue.size}`
                 })
             };
         }
