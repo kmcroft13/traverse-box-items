@@ -536,7 +536,7 @@ async function getUserItems(userId, startingFolderID, followChildItems = true) {
         })
 
         logger.log.info({
-            label: "traverse",
+            label: "getUserItems",
             action: "INITIALIZE_TASK_QUEUE",
             executionId: userInfo.id,
             message: `Successfully initialized a task queue for "${userInfo.name}" (${userInfo.id})`
@@ -576,7 +576,7 @@ async function traverse() {
             label: "traverse",
             action: "CSV_OPTION_ENABLED",
             executionId: "N/A",
-            message: `CSV config option is enabled, proceeding with CSV based traversal.`
+            message: `CSV config option is enabled, proceeding with CSV based traversal`
         })
 
         //Attempt to read and parse CSV file
@@ -701,8 +701,10 @@ async function traverse() {
         })
 
         for (let i in config.whitelist.items) {
+            console.log(config.whitelist.items);
             //Check if we should recurse through child items for this user's whitelist
-            for (let folderID in config.whitelist.items[i].folderIDs) {
+            for (let folderID of config.whitelist.items[i].folderIDs) {
+                console.log(folderID);
                 usersTaskQueue.add( async function() { await getUserItems(config.whitelist.items[i].ownerID, folderID, config.whitelist.items[i].followAllChildItems) });
                 logger.log.info({
                     label: "traverse",
@@ -763,7 +765,7 @@ async function index() {
 
     logger.log.info({
         label: "index",
-        action: "INITIALIZE_TRAVERSAL_TASKS",
+        action: "BEGIN_INITIALIZE_TRAVERSAL_TASKS",
         executionId: "N/A",
         message: `Preparing to create traverse tasks for all items`
     })
@@ -772,7 +774,7 @@ async function index() {
 
     logger.log.info({
         label: "index",
-        action: "TRAVERSAL_TASKS_INITIALIZED",
+        action: "END_INITIALIZE_TRAVERSAL_TASKS",
         executionId: "N/A",
         message: `All traverse tasks have been created and are pending completion`
     })
