@@ -37,7 +37,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     if(config.modifyData) {
         //ACTUALLY MODIFY DATA
         if(getLinkAccess(itemObj.shared_link) === matchAccessLevel) {
-            queue.add( async function() { await modifySharedLink(client, itemObj, newAccessLevel, executionID, queue) });
+            queue.add( async function() { await modifySharedLink(client, clientUserObj, itemObj, newAccessLevel, executionID, queue) });
         }
     } else {
         //PERFORM LOGGING FOR SIMULATION
@@ -87,7 +87,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
  * 
  * returns none
 */
-async function modifySharedLink(client, itemObj, newAccessLevel, executionID, queue) {
+async function modifySharedLink(client, clientUserObj, itemObj, newAccessLevel, executionID, queue) {
     let newItem;
     try {
         if(itemObj.type === "file") {
