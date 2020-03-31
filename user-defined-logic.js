@@ -13,7 +13,7 @@ const { helpers, logger, csv, userCache } = app;
 */
 async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) { 
     //Generate unique executionID for this loop
-    const executionID = (Math.random()* 1e20).toString(36)
+    const executionID = helpers.generateExecutionId();
     
     logger.log.debug({
         label: "performUserDefinedActions",
@@ -23,8 +23,12 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     })
 
     // Initialize variables for user object, user API client, and user task queue
+    //Box API client for the user who owns the item
     const client = userCache.getUser(ownerId).client;
+    //Box user object for the user who owns the item
     const clientUserObj = userCache.getUser(ownerId).info;
+    //An instance of the queue for the user who owns the item
+    //This is useful for scenarios where processing was incomplete and an item needs to be re-added to the queue, such as rate limiting
     const queue = userCache.getUser(ownerId).queue;
 
 

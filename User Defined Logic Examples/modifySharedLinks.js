@@ -16,7 +16,7 @@
  * returns none
 */
 async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) { 
-    logger.debug({
+    logger.log.debug({
         label: "performUserDefinedActions",
         action: "PREPARE_USER_DEFINED_ACTION",
         executionId: parentExecutionID,
@@ -37,7 +37,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     if(config.modifyData) {
         //ACTUALLY MODIFY DATA
         if(getLinkAccess(itemObj.shared_link) === matchAccessLevel) {
-            queue.add( async function() { await modifySharedLink(client, itemObj, newAccessLevel, executionID) });
+            queue.add( async function() { await modifySharedLink(client, itemObj, newAccessLevel, executionID, queue) });
         }
     } else {
         //PERFORM LOGGING FOR SIMULATION
@@ -87,7 +87,7 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
  * 
  * returns none
 */
-async function modifySharedLink(client, itemObj, newAccessLevel, executionID) {
+async function modifySharedLink(client, itemObj, newAccessLevel, executionID, queue) {
     let newItem;
     try {
         if(itemObj.type === "file") {
@@ -116,14 +116,14 @@ async function modifySharedLink(client, itemObj, newAccessLevel, executionID) {
                 })
         }
 
-        logger.info({
+        logger.log.info({
             label: "modifySharedLink",
             action: "MODIFY_SHARED_LINK",
             executionId: executionID,
             message: `Successfully modified shared link on ${newItem.type} "${newItem.id}" from ${itemObj.shared_link.access.toUpperCase()} to ${newItem.shared_link.access.toUpperCase()}`
         })
 
-        logAudit(
+        logger.logAudit(
             "SHARED_LINK_MODIFY",
             newItem,
             `Modified link ${newItem.shared_link.url} from ${itemObj.shared_link.access.toUpperCase()} to ${newItem.shared_link.access.toUpperCase()}`, 
@@ -131,16 +131,16 @@ async function modifySharedLink(client, itemObj, newAccessLevel, executionID) {
         );
     } catch(err) {
         if(err.response && err.response.statusCode === 429) {
-            logError(err, "modifySharedLink", `Request for ${itemObj.type} "${itemObj.id}" rate limited -- Re-adding task to queue`, executionID);
+            logger.logError(err, "modifySharedLink", `Request for ${itemObj.type} "${itemObj.id}" rate limited -- Re-adding task to queue`, executionID);
             queue.add( async function() { await modifySharedLink(client, itemObj, newAccessLevel, executionID) });
-            logger.debug({
+            logger.log.debug({
                 label: "modifySharedLink",
                 action: "ADD_TO_QUEUE",
                 executionId: executionID,
                 message: `Added task for ${itemObj.type} ${itemObj.id} | Queue ${clientUserObj.id} size: ${queue.size}`
             })
         } else {
-            logError(err, "modifySharedLink", `modification of shared link for ${itemObj.type} "${itemObj.id}"`, executionID);
+            logger.logError(err, "modifySharedLink", `modification of shared link for ${itemObj.type} "${itemObj.id}"`, executionID);
         }
     }
 }
@@ -154,14 +154,14 @@ async function modifySharedLink(client, itemObj, newAccessLevel, executionID) {
  * returns none
 */
 async function simulateModifySharedLink(itemObj, newAccessLevel, executionID) {
-    logger.info({
+    logger.log.info({
         label: "simulateModifySharedLink",
         action: "SIMULATE_MODIFY_SHARED_LINK",
         executionId: executionID,
         message: `Would have modified link ${itemObj.shared_link.url} from ${itemObj.shared_link.access.toUpperCase()} to ${newAccessLevel.toUpperCase()}`
     })
 
-    logAudit(
+    logger.logAudit(
         "SIMULATE_SHARED_LINK_MODIFY",
         itemObj,
         `Would have modified link ${itemObj.shared_link.url} from ${itemObj.shared_link.access.toUpperCase()} to ${newAccessLevel.toUpperCase()}`, 
