@@ -6,7 +6,7 @@ const config = helpers.loadConfigs();
 
 const userCache = {};
 
-const addUser = function(userObj, userClient) {
+const addUser = (userObj, userClient) => {
     if(typeof userObj !== 'object' || !userObj.id) {
         throw new Error(`userObj not provided or improperly formatted`);
     }
@@ -16,6 +16,7 @@ const addUser = function(userObj, userClient) {
     try {
         userCache[userObj.id] = { 
             queue: new PQueue({interval: 1000, intervalCap: config.maxQueueTasksPerSecond, carryoverConcurrencyCount: false}),
+            isProcessing: true,
             client: userClient,
             info: userObj
         };
@@ -27,7 +28,7 @@ const addUser = function(userObj, userClient) {
     
 };
 
-const getUser = function(userId) {
+const getUser = (userId) => {
     if(typeof userId !== 'string' || !userId) {
         throw new Error(`userId not provided or improperly formatted`);
     }
@@ -35,7 +36,7 @@ const getUser = function(userId) {
     return userCache[userId];
 };
 
-const checkUser = function(userId) {
+const checkUser = (userId) => {
     if(typeof userId !== 'string' || !userId) {
         throw new Error(`userId not provided or improperly formatted`);
     }
@@ -47,4 +48,15 @@ const checkUser = function(userId) {
     }
 };
 
-module.exports = { addUser, getUser, checkUser };
+
+const activeProcessingUsers = () => {
+    const activeProcessingUsers = [];
+    for (const [key, value] of Object.entries(userCache)) {
+        if(value.isProcessing === true) {
+            activeProcessingUsers.push(key);
+        }
+    }
+    return activeProcessingUsers;
+}
+
+module.exports = { addUser, getUser, checkUser, activeProcessingUsers };
