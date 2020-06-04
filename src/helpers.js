@@ -2,15 +2,21 @@
 const fs = require('fs');
 
 
-const generateExecutionId = function() {
+const generateExecutionId = () => {
     const execIdLength = 10;
     const execId = [...Array(execIdLength)].map(_=>(Math.random()*36|0).toString(36)).join``;
     return execId;
 };
 
 
+//Get the caller function (used for logging purposes)
+function getFunctionName() {
+    return getFunctionName.caller.name
+};
+
+
 // Load JSON from script config file
-const loadConfigs = function() {
+const loadConfigs = () => {
     const scriptConfigFileName = './config.json';
     const scriptConfigFileContent = fs.readFileSync(`./${scriptConfigFileName}`);
     let config;
@@ -28,4 +34,4 @@ const loadConfigs = function() {
     return config;
 };
 
-module.exports = { generateExecutionId, loadConfigs };
+module.exports = { generateExecutionId, loadConfigs, getFunctionName };
