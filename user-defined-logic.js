@@ -1,28 +1,17 @@
 const app = require('./src');
 const { helpers, logger, csv, userCache } = app;
 
-////  USER DEFINED LOGIC  /////////////////////////////////////////////////
-//This function is called for each file processed by traverse-box-items.js
-
-/* performUserDefinedActions()
- * param [string] ownerId: User ID for the user who owns the item
- * param [object] itemObj: Object associated with the triggering file, folder, or web_link
- * param [string] parentExecutionID: Execution ID passed from the triggering function
- * 
- * returns none
-*/
+/**
+ * A function called on every Box item processed by traverse-box-items.js where custom business logic can be implemented
+ * @param  {String} ownerId Box user ID of the user who owns the Box item
+ * @param  {Object} itemObj Box item object (folder, file, web_link)
+ * @param  {String} parentExecutionID Unique ID associated with the execution loop which called initiated this iteration
+ * @return {None}   Nothing returned by this function
+ */
 async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) { 
     //Generate unique executionID for this loop
     const executionID = helpers.generateExecutionId();
-    
-    logger.log.debug({
-        label: "performUserDefinedActions",
-        action: "PREPARE_USER_DEFINED_ACTION",
-        executionId: `${executionID} | Parent: ${parentExecutionID}`,
-        message: `Performing user defined action for ${itemObj.type} "${itemObj.id}"`
-    })
-
-    // Initialize variables for user object, user API client, and user task queue
+    //Initialize variables for user object, user API client, and user task queue
     //Box API client for the user who owns the item
     const client = userCache.getUser(ownerId).client;
     //Box user object for the user who owns the item
@@ -31,6 +20,12 @@ async function performUserDefinedActions(ownerId, itemObj, parentExecutionID) {
     //This is useful for scenarios where processing was incomplete and an item needs to be re-added to the queue, such as rate limiting
     const queue = userCache.getUser(ownerId).queue;
 
+    logger.log.info({
+        label: "performUserDefinedActions",
+        action: "PREPARE_USER_DEFINED_ACTIONS",
+        executionId: `${executionID} | Parent: ${parentExecutionID}`,
+        message: `Performing user defined actions for ${itemObj.type} "${itemObj.id}" | Queue ${clientUserObj.id} size: ${queue.size}`
+    });
 
     //[OPTIONAL] Take action on ALL OBJECTS here
     if(helpers.loadConfigs().modifyData) {
