@@ -12,6 +12,7 @@ const config = helpers.loadConfigs();
 ////  CONSTANTS  //////////////////////////////////////////////////////////
 const runtimeLogsPath = './runtimeLogs';
 const auditLogsPath = './auditLogs';
+let reportFile = "";
 
 ////  INITIALIZE LOGGING  /////////////////////////////////////////////////
 if (!fs.existsSync(runtimeLogsPath)){
@@ -25,21 +26,11 @@ const logFormat = printf(info => {
   return `${info.timestamp}\t${info.level}\t${info.executionId}\t${info.label}\t${info.action}\t${info.message}\t${info.errorDetails ? `\t${info.errorDetails}` : ``}`;
 });
 
-const actionFormat = printf(info => {
-    return `${info.time ? `"${info.time}` : `"${info.timestamp}`}","${info.label}","${info.executionId}","${info.itemID}","${info.itemName}","${info.itemType}","${info.ownedByEmail}","${info.ownedByID}","${info.pathByNames}","${info.pathByIDs}","${info.itemCreatedAt}","${info.modifiedAt}","${info.size}","${info.sharedLink}","${info.sharedLinkAccess}","${info.message}"`;
-  });
-
-const customLogLevels = {
-    levels: {
-        action: 0
-    }
-  };
-
 const log = createLogger({
     format: combine(
         format(info => {
-            info.level = info.level.toUpperCase()
-            info.action = info.action.toUpperCase()
+            info.level ? info.level = info.level.toUpperCase() : 'ERROR'
+            info.action ? info.action = info.action.toUpperCase() : 'UNHANDLED_EXCEPTION'
             return info;
         })(),
         timestamp(),
@@ -50,8 +41,8 @@ const log = createLogger({
             level: 'debug',
             format: combine(
                 format(info => {
-                    info.level = info.level.toUpperCase()
-                    info.action = info.action.toUpperCase()
+                    info.level ? info.level = info.level.toUpperCase() : 'ERROR'
+                    info.action ? info.action = info.action.toUpperCase() : 'UNHANDLED_EXCEPTION'
                     return info;
                 })(),
                 colorize(),
@@ -64,46 +55,103 @@ const log = createLogger({
     ],
     exceptionHandlers: [
         new transports.Console(),
-        new transports.File({ filename: path.join(runtimeLogsPath, '/scriptLog-exceptions.log') })
+        new transports.File({ filename: path.join(runtimeLogsPath, '/scriptLog-exceptions.log'), handleExceptions: true, handleRejections: true })
     ]
 });
 
-const d = new Date();
-const datestring = ("0"+(d.getMonth()+1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2) + "-" + d.getFullYear() + "_" + ("0" + d.getHours()).slice(-2) + "-" + ("0" + d.getMinutes()).slice(-2);
-const auditor = createLogger({
-    format: combine(
-        format(info => {
-            info.level = info.level.toUpperCase()
-            return info;
-        })(),
-        timestamp(),
-        actionFormat
-    ),
-    levels: customLogLevels.levels,
-    transports: [
-        new transports.File({ filename: path.join(auditLogsPath, `/${datestring}_Results.csv`), level: 'action' })
-    ]
-});
+process.on('unhandledRejection', (reason, promise) => {
+    throw reason;
+})
 
-//Workaround to create "header" row in Results log file
-auditor.action({
-    time: "TIMESTAMP",
-    label: "ACTION",
-    executionId: "EXECUTION_ID",
-    itemID: "BOX_ITEM_ID",
-    itemName: "BOX_ITEM_NAME",
-    itemType: "BOX_ITEM_TYPE",
-    ownedByEmail: "OWNED_BY_EMAIL",
-    ownedByID: "OWNED_BY_ID",
-    pathByNames: "PATH_BY_NAME",
-    pathByIDs: "PATH_BY_ID",
-    itemCreatedAt: "ITEM_CREATED_AT",
-    modifiedAt: "ITEM_MODIFIED_AT",
-    size: "ITEM_SIZE_BYTES",
-    sharedLink: "ITEM_LINK",
-    sharedLinkAccess: "LINK_ACCESS_LEVEL",
-    message: "DETAILS"
-});
+let auditor;
+async function buildAuditLogger() {
+
+    let headerObj = {
+        timestamp: "TIMESTAMP",
+        label: "ACTION",
+        executionId: "EXECUTION_ID",
+        itemID: "BOX_ITEM_ID",
+        itemName: "BOX_ITEM_NAME",
+        itemType: "BOX_ITEM_TYPE",
+        ownedByEmail: "OWNED_BY_EMAIL",
+        ownedByID: "OWNED_BY_ID",
+        pathByNames: "PATH_BY_NAME",
+        pathByIDs: "PATH_BY_ID",
+        itemCreatedAt: "ITEM_CREATED_AT",
+        modifiedAt: "ITEM_MODIFIED_AT",
+        sharedLink: "ITEM_LINK",
+        sharedLinkAccess: "LINK_ACCESS_LEVEL",
+        size: "ITEM_SIZE_BYTES",
+    };
+
+
+    //If metadata is being retrieved, dynamically add it to audit object
+    let metadataField = config.boxItemFields.split(',');
+    metadataField = metadataField.find(field => field.includes("metadata"));
+    if(metadataField) {
+        // Require module for Box SDK
+        const BoxSDK = require('box-node-sdk');
+        const sdk = new BoxSDK({
+            clientID: config.boxAppSettings.clientID,
+            clientSecret: config.boxAppSettings.clientSecret,
+            appAuth: config.boxAppSettings.appAuth,
+            enterpriseID: config.boxAppSettings.enterpriseID,
+            request: { strictSSL: true }
+        });
+        const serviceAccountClient = sdk.getAppAuthClient('enterprise', config.enterpriseId);
+    
+        metadataField = metadataField.replace("metadata.","");
+        const [ mdScope, mdTemplate ] = metadataField.split('.');
+        const mdSchema = await serviceAccountClient.metadata.getTemplateSchema(mdScope, mdTemplate);
+        
+        mdSchema.fields.forEach(field => {
+            headerObj[field.key] = field.displayName.toUpperCase().replace(/ /g,'_').replace(/"/g,'""');
+        })
+
+    }
+    
+    //Add details as last column
+    headerObj["message"] = "DETAILS";
+
+    //Build audit CSV row format
+    const actionFormat = printf(info => {
+        let loggerString = [];
+        Object.keys(headerObj).forEach( key => loggerString.push(info[key]));
+        loggerString = loggerString.join('","');
+
+        return `"${loggerString}"`;
+    });
+    
+    const customLogLevels = {
+        levels: {
+            action: 0
+        }
+    };
+    const d = new Date();
+    const datestring = ("0"+(d.getMonth()+1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2) + "-" + d.getFullYear() + "_" + ("0" + d.getHours()).slice(-2) + "-" + ("0" + d.getMinutes()).slice(-2);
+    reportFile = path.join(auditLogsPath, `/${datestring}_Results.csv`);
+
+    const audit = createLogger({
+        format: combine(
+            format(info => {
+                delete info.level;
+                return info;
+            })(),
+            timestamp(),
+            actionFormat
+        ),
+        levels: customLogLevels.levels,
+        transports: [
+            new transports.File({ filename: reportFile, level: 'action' })
+        ]
+    });
+
+    //Workaround to create "header" row in Results log file
+    audit.action(headerObj);
+    auditor = audit;
+    return true;
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
 
@@ -181,16 +229,30 @@ function getLinkAccess(sharedLinkObj) {
     return accessString
 }
 
-
-/* logError()
- * param [object] err: Error object returned from catch
- * param [string] functionName: NAme of the function which originated the error
- * param [string] failedEvent: Description of the action which failed
- * param [string] executionID: Unique ID associated with a given execution loop
- * 
- * returns none
+/**
+ * Prepares audit log messages for CSV format
+ * @param   {string} message: Message passed to the logAudit function
+ * @returns {string} A sanizied audit log message
 */
-const logError = function(err, functionName, failedEvent, executionID) {
+function sanitizeAuditLogMessage(message) {
+    return message.replace(/"/g,'""');
+}
+
+
+function getReportPath() {
+    return reportFile;
+}
+
+
+/**
+ * Logs an error entry to runtime logs
+ * @param  {Object} err Error object returned from catch
+ * @param  {String} functionName Name of the function which originated the error
+ * @param  {String} failedEvent Description of the action which failed
+ * @param  {String} executionID Unique ID associated with a given execution loop
+ * @return {None}   Nothing returned by this function
+ */
+const logError = (err, functionName, failedEvent, executionID) => {
     if(err.response) {
         if(err.response.statusCode === 429) {
             log.warn({
@@ -200,7 +262,7 @@ const logError = function(err, functionName, failedEvent, executionID) {
                 message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
                 errorDetails: JSON.stringify(err.response)
             });
-        } else if(err.response.body.code) {
+        } else if(err.response.body && err.response.body.code) {
             log.error({
                 label: functionName,
                 action: "BOX_REQUEST_FAILED",
@@ -208,7 +270,7 @@ const logError = function(err, functionName, failedEvent, executionID) {
                 message: `${failedEvent} | Status: ${err.response.statusCode} | Code: ${err.response.body.code} | Message: ${err.response.body.message}`,
                 errorDetails: JSON.stringify(err.response)
             });
-        } else if(err.response.body.error) {
+        } else if(err.response.body && err.response.body.error) {
             log.error({
                 label: functionName,
                 action: "BOX_REQUEST_FAILED",
@@ -237,16 +299,16 @@ const logError = function(err, functionName, failedEvent, executionID) {
 }
 
 
-/* logAudit()
- * param [string] action: Action that is being audited
- * param [object] boxItemObj: Box item object (folder, file, web_link)
- * param [string] message: Additional details about the event
- * param [string] executionID: Unique ID associated with a given execution loop
- * 
- * returns none
-*/
-const logAudit = function(action, boxItemObj, message, executionID) {
-    auditor.action({
+/**
+ * Logs an audit entry to the audit CSV
+ * @param  {String} action Action that is being audited
+ * @param  {Object} boxItemObj Box item object (folder, file, web_link)
+ * @param  {String} message Additional details about the event
+ * @param  {String} executionID Unique ID associated with a given execution loop
+ * @return {None}   Nothing returned by this function
+ */
+const logAudit = (action, boxItemObj, message, executionID) => {
+    let auditorObj = {
         label: action,
         executionId: executionID,
         itemID: boxItemObj.id,
@@ -261,9 +323,33 @@ const logAudit = function(action, boxItemObj, message, executionID) {
         size: boxItemObj.size,
         sharedLink: getLinkURL(boxItemObj.shared_link),
         sharedLinkAccess: getLinkAccess(boxItemObj.shared_link),
-        message: message
-    });
+        message: sanitizeAuditLogMessage(message)
+    };
+
+    //If metadata is available, dynamically add it to audit object
+    if(boxItemObj.metadata) {
+        try{
+            if(JSON.stringify(boxItemObj.metadata).includes("$id")) {
+                boxItemObj.metadata = JSON.stringify(boxItemObj.metadata).substring(1);
+                boxItemObj.metadata = boxItemObj.metadata.split(/(?:,"\$id":)+/)[0];
+                boxItemObj.metadata = JSON.parse(`{${boxItemObj.metadata}}`);
+            }
+            boxItemObj.metadata = Object.keys(boxItemObj.metadata).reduce((newObj, key) => {newObj[key] = boxItemObj.metadata[key].replace(/"/g,'""'); return newObj; }, {});
+            for(var key in boxItemObj.metadata) {
+                auditorObj[key] = boxItemObj.metadata[key];
+            }
+        } catch(err) {
+            logError(
+                err,
+                "logger",
+                `Failed to log ${boxItemObj.type} "${boxItemObj.id}" with metadata: ${JSON.stringify(boxItemObj.metadata)}`,
+                executionID
+            );
+        }
+    }
+
+    auditor.action(auditorObj);
 }
 ///////////////////////////////////////////////////////////////////////////
 
-module.exports = { log, logAudit, logError };
+module.exports = { log, logAudit, logError, buildAuditLogger, getReportPath };
