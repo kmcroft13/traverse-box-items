@@ -2,6 +2,10 @@
   "modifyData": false,
   "auditTraversal": true,
   "logLevel": "info",
+  "auditReport": {
+    "uploadToBox": true,
+    "uploadFolderId": "0"
+  },
   "maxConcurrentUsers": 10,
   "maxQueueTasksPerSecond": 16,
   "nonOwnedItems": {
