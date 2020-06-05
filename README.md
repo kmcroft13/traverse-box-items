@@ -29,6 +29,11 @@ Below is a summary of the features offered by this script:
 ## Item Traversal ##
 Out of the box this script will simply traverse all files, folders, and web links (ie. bookmarks) for all users in a Box instance. It will start by getting all users in the Box instance and then it will impersonnate each user to get the items they own. It will log all items to an audit CSV file for review.
 
+### Traversal with Metadata ###
+If a metadata template is included in the config `boxItemFields` option (see [Config File](https://github.com/kmcroft13/traverse-box-items#config-file)) it will automatically be included with the Box item object during traversal. Corresponding metadata instance values on a particular item will be automatically be logged to the Audit Log CSV (if the `auditTraversal` config option is enabled). All metadata instance properties are flattened and normalized for you, and available on applicable Box items under the `metadata` item object key.
+
+To enable metadata traversal, an additional value should be added in config `boxItemFields` comma-separated list in the form of "metadata.enterprise.{{templateKey}}", where {{templateKey}} is the key (not display name) of the metadata template you want to include in traversal results. For exmaple, to include traversal results for Box items which may have a metadata instance with template "sampleTemplate" applied the corresponding value to be added to config option `boxItemFields` would be `metadata.enterprise.sampleTemplate`.
+
 ## User Cache and Task Queue ##
 This script implements an `userCache` object which contains a Box user object, Box API client, and user-specific task queue for every in scope user that the script will process. Each object entry's key is defined by the Box user ID for which it represents, and every function is designed to use the relevant user context (Box API client) and tasks queue based on a user ID passed to that function.
 
@@ -66,12 +71,12 @@ If adding custom User Defined Business Logic, it is recommended to implement a "
 ## Audit Logging ##
 A `logAudit` function is exposed to write items to an audit CSV file which write actions the script performs. Audit logging is already implemented for basic traversal (and can be disable via config file). If adding custom User Defined Business Logic, you may also choose to audit your custom actions with this function. This function requires the following parameters:
 
-    param [string] action: Action that is being audited
-    param [object] boxItemObj: Box item object (folder, file, web_link)
-    param [string] message: Additional details about the event
-    param [string] executionID: Unique ID associated with a given execution loop
+    @param {string} action: Action that is being audited
+    @param {object} boxItemObj: Box item object (folder, file, web_link)
+    @param {string} message: Additional details about the event
+    @param {string} executionID: Unique ID associated with a given execution loop
 
-A new audit log file will be generated each time the script is executed.
+A new audit log file will be generated each time the script is executed. This file can optionally be automatically uploaded to Box when the script completes. See the [Config File section](https://github.com/kmcroft13/traverse-box-items#config-file) for configuration details.
 
 ## Runtime Logging ##
 Audit logging is separate from runtime logs which are also collected during execution. Runtime logs are implemented through a series of `logger` methods. See [Winston documentation](https://github.com/winstonjs/winston) for info about these methods, or view the various examples already implemented in the script.
@@ -94,6 +99,9 @@ _**NOTE**: The `boxAppSettings` object in the config is structured slightly diff
 * **modifyData** _[boolean]_: Whether or not data should be modified at runtime (if implemented for custom User Defined Business Logic)
 * **auditTraversal** _[boolean]_: Whether or not items should be audit logged during traversal (setting to `true` will output an audit log for each processed item but will cause the audit log to be much larger)
 * **logLevel** _[string]_: Log level to write out for runtime log files. Acceptable values are: "debug", "info", "warn". All events with a severity equal to or more severe than the specified config level will be logged.
+* **auditReport** _[object]_: Container object for CSV configurations
+    * **uploadToBox** _[boolean]_: Whether or not the script should automatically upload its Audit Report to Box for each run
+    * **uploadFolderId** _[string]_: If uploadToBox option enabled, the folder ID to which the report should be uploaded (the Service Account user must own or have collaboration access to this folder)
 * **maxConcurrentUsers** _[integer]_: Controls the maximum number of users to be concurrently processed for traversal tasks (not applicable in CSV mode)
 * **maxQueueTasksPerSecond** _[integer]_: Controls the maximum number of sub-tasks per user per second (should match the maximum number of allowed Box API requests per second which is 16 by default)
 * **nonOwnedItems** _[object]_: Container object for non-owned item configurations
