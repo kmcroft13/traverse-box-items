@@ -329,13 +329,20 @@ const logAudit = (action, boxItemObj, message, executionID) => {
     //If metadata is available, dynamically add it to audit object
     if(boxItemObj.metadata) {
         try{
-            if(JSON.stringify(boxItemObj.metadata).includes("$id")) {
-                boxItemObj.metadata = JSON.stringify(boxItemObj.metadata).substring(1);
-                boxItemObj.metadata = boxItemObj.metadata.split(/(?:,"\$id":)+/)[0];
-                boxItemObj.metadata = JSON.parse(`{${boxItemObj.metadata}}`);
-            }
-            boxItemObj.metadata = Object.keys(boxItemObj.metadata).reduce((newObj, key) => {newObj[key] = boxItemObj.metadata[key].replace(/"/g,'""'); return newObj; }, {});
-            for(var key in boxItemObj.metadata) {
+            for(let key in boxItemObj.metadata) {
+                if(key.startsWith("$")) {
+                    continue;
+                }
+                if(Array.isArray(boxItemObj.metadata[key])) {
+                    boxItemObj.metadata[key] = boxItemObj.metadata[key].toString();
+                }
+                if(typeof boxItemObj.metadata[key] === 'number') {
+                    boxItemObj.metadata[key] = boxItemObj.metadata[key].toString();
+                }
+                if(typeof boxItemObj.metadata[key] === 'string') {
+                    boxItemObj.metadata[key] = boxItemObj.metadata[key].replace(/"/g,'""');
+                }
+                
                 auditorObj[key] = boxItemObj.metadata[key];
             }
         } catch(err) {

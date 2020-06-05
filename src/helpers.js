@@ -34,4 +34,12 @@ const loadConfigs = () => {
     return config;
 };
 
-module.exports = { generateExecutionId, loadConfigs, getFunctionName };
+const flattenMetadata = (obj) => {
+    const scopeKey = Object.keys(obj)[0];
+    const scopeObj = obj[scopeKey];
+    const templateKey = Object.keys(scopeObj)[0];
+    const instanceData = scopeObj[templateKey];
+    return instanceData;
+}
+
+module.exports = { generateExecutionId, loadConfigs, getFunctionName, flattenMetadata };
