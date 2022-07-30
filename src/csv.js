@@ -17,7 +17,7 @@ const parseFile = function(filePath) {
     let csv;
     try {
         //Read wave analysis CSV
-        csv = parse(rawCsv, {columns: true, skip_empty_lines: true, skip_lines_with_empty_values: true});
+        csv = parse(rawCsv, {columns: true, skip_empty_lines: true, skip_records_with_empty_values: true});
     } catch(err) {
         logger.logError(err, "csv/parseFile", `Error parsing CSV file object`, "N/A");
     }
