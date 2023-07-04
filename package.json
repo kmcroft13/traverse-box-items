@@ -4,10 +4,10 @@
   "description": "Traverse all folders, files, and web links in a Box instance and perform custom actions during processing",
   "main": "traverse-box-items-generic.js",
   "dependencies": {
-    "box-node-sdk": "^2.4.0",
-    "csv": "^6.2.0",
-    "p-queue": "^3.2.0",
-    "winston": "^3.2.1"
+    "box-node-sdk": "^3.1.0",
+    "csv": "^6.2.7",
+    "p-queue": "^5.0.0",
+    "winston": "^3.9.0"
   },
   "devDependencies": {},
   "scripts": {
