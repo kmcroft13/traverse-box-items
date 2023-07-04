@@ -1,5 +1,5 @@
 //Require modules from 'node-csv' (CSV parser)
-const parse = require('csv-parse/lib/sync');
+const { parse } = require('csv-parse/sync');
 ////  LOAD MODULES  ///////////////////////////////////////////////////////
 const logger = require('./logger');
 const fs = require('fs');
@@ -54,6 +54,9 @@ const validateRow = function(index, row) {
     if(row.hasOwnProperty('item_id') && row['item_id'] != "") {
         rowValidation.itemId.exists = true;
         rowValidation.itemId.key = 'item_id';
+    } else if (row.hasOwnProperty('Item ID') && row['Item ID'] != "") {
+        rowValidation.itemId.exists = true;
+        rowValidation.itemId.key = 'Item ID';
     } else if (row.hasOwnProperty('Folder/File ID') && row['Folder/File ID'] != "") {
         rowValidation.itemId.exists = true;
         rowValidation.itemId.key = 'Folder/File ID';
@@ -62,6 +65,9 @@ const validateRow = function(index, row) {
     if(row.hasOwnProperty('type') && row['type'] != "") {
         rowValidation.type.exists = true;
         rowValidation.type.key = 'type';
+    } else if(row.hasOwnProperty('Item Type') && row['Item Type'] != "") {
+        rowValidation.type.exists = true;
+        rowValidation.type.key = 'Item Type';
     } else if(row.hasOwnProperty('path') && row['path'] != "") {
         rowValidation.type.exists = true;
         rowValidation.type.key = 'path';
@@ -78,11 +84,11 @@ const validateRow = function(index, row) {
         }
 
         if(!rowValidation.itemId.exists) {
-            rowValidation.validationErrors.push(`"item_id" OR "Folder/File ID`);
+            rowValidation.validationErrors.push(`"item_id" OR "Item ID" OR "Folder/File ID"`);
         }
 
         if(!rowValidation.type.exists) {
-            rowValidation.validationErrors.push(`"type" OR "Path"`);
+            rowValidation.validationErrors.push(`"type" OR "Item Type" OR "Path"`);
         }
     }
 
@@ -92,12 +98,13 @@ const validateRow = function(index, row) {
 const normalizeRow = function(index, row, rowValidator) {
 
     function setItemType(typeOrPath) {
-        if(typeOrPath === "web_link" || typeOrPath === "folder" || typeOrPath === "file") {
-            return typeOrPath;
+        const normalizedTypeOrPath = typeOrPath.toLowerCase();
+        if(normalizedTypeOrPath === "web_link" || normalizedTypeOrPath === "folder" || normalizedTypeOrPath === "file") {
+            return normalizedTypeOrPath;
         }
-        else if (typeOrPath.slice(0,4) === "http" ) {
+        else if (normalizedTypeOrPath === "Bookmark" || normalizedTypeOrPath.slice(0,4) === "http" ) {
             return "web_link";
-        } else if (typeOrPath.slice(-1) === "/") {
+        } else if (normalizedTypeOrPath.slice(-1) === "/") {
             return "folder";
         } else {
             return "file";
