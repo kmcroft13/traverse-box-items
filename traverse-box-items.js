@@ -1,7 +1,7 @@
 /*
  * INTRODUCTION
  * This script will traverse all items in a Box instance while honoring 
- * configurations for a whitelist, blacklist, or read from CSV.
+ * configurations for an allowlist, denylist, or read from CSV.
  * 
  * It also exposes a "performUserDefinedActions" function which allows for
  * custom business logic to be performed on each item retreived during traversal.
@@ -444,7 +444,7 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
     }
 
     //If this is the first iteration and not the root folder, take action on starting folder itself
-    //This only applies if using whitelist configuration!
+    //This only applies if using allowlist configuration!
     if(firstIteration && folderID !== '0') {
         userCache.getUser(ownerId).queue.add( async function() { await getFolderInfo(ownerId, folderID, executionID) });
         logger.log.debug({
@@ -478,14 +478,14 @@ async function processFolderItems(ownerId, folderID, parentExecutionID, followCh
             continue;
         }
 
-        //If blacklist is enabled and if folder is included in blacklist
-        if(items[i].type === "folder" && config.blacklist.enabled && config.blacklist.folders.includes(items[i].id)) {
+        //If denylist is enabled and if folder is included in denylist
+        if(items[i].type === "folder" && config.denylist.enabled && config.denylist.folders.includes(items[i].id)) {
             //Log item then skip it
             logger.log.warn({
                 label: helpers.getFunctionName(),
-                action: "IGNORE_BLACKLIST_ITEM",
+                action: "IGNORE_DENYLIST_ITEM",
                 executionId: executionID,
-                message: `Folder "${items[i].name}" (${items[i].id}) is included in configured blacklist - Ignoring`
+                message: `Folder "${items[i].name}" (${items[i].id}) is included in configured denylist - Ignoring`
             })
 
             continue;
@@ -669,7 +669,7 @@ async function getUserItems(userId, startingFolderIDs, followChildItems = true) 
 */
 async function traverse() {
 
-    //Check if whitelist is enabled
+    //Check if allowlist is enabled
     if(config.csv.enabled) {
         logger.log.debug({
             label: helpers.getFunctionName(),
@@ -791,38 +791,38 @@ async function traverse() {
             }
         }
 
-    } else if(config.whitelist.enabled) {
+    } else if(config.allowlist.enabled) {
         logger.log.info({
             label: helpers.getFunctionName(),
-            action: "WHITELIST",
+            action: "ALLOWLIST",
             executionId: "N/A   ",
-            message: `Preparing to iterate through whitelist`
+            message: `Preparing to iterate through allowlist`
         })
 
-        for (let i in config.whitelist.items) {
-            //Check if we should recurse through child items for this user's whitelist
-            usersTaskQueue.add( async function() { await getUserItems(config.whitelist.items[i].ownerID, config.whitelist.items[i].folderIDs, config.whitelist.items[i].followAllChildItems) });
+        for (let i in config.allowlist.items) {
+            //Check if we should recurse through child items for this user's allowlist
+            usersTaskQueue.add( async function() { await getUserItems(config.allowlist.items[i].ownerID, config.allowlist.items[i].folderIDs, config.allowlist.items[i].followAllChildItems) });
             logger.log.info({
                 label: helpers.getFunctionName(),
                 action: "CREATED_TRAVERSAL_TASK",
                 executionId: "N/A   ",
-                message: `Created a traversal task for ${config.whitelist.items[i].folderIDs.length === 1 ? `folder` : `folders`} "${config.whitelist.items[i].folderIDs}" owned by "${config.whitelist.items[i].ownerID}" | Users task queue size: ${usersTaskQueue.size}`
+                message: `Created a traversal task for ${config.allowlist.items[i].folderIDs.length === 1 ? `folder` : `folders`} "${config.allowlist.items[i].folderIDs}" owned by "${config.allowlist.items[i].ownerID}" | Users task queue size: ${usersTaskQueue.size}`
             });
         }
 
-    } else { //Whitelist not enabled, perform actions on all users (honoring blacklist)
+    } else { //Allowlist not enabled, perform actions on all users (honoring denylist)
         //Get all enterprise users
         const enterpriseUsers = await getEnterpriseUsers(serviceAccountClient);
 
         for (let i in enterpriseUsers) {
-            //Check if user is included in blacklist
-            if(config.blacklist.enabled && config.blacklist.users.includes(enterpriseUsers[i].id)) {
+            //Check if user is included in denylist
+            if(config.denylist.enabled && config.denylist.users.includes(enterpriseUsers[i].id)) {
                 //Log item then skip it
                 logger.log.warn({
                     label: helpers.getFunctionName(),
                     action: "IGNORE_USER",
                     executionId: "N/A   ",
-                    message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) is included in configured blacklist - Ignoring`
+                    message: `User "${enterpriseUsers[i].name}" (${enterpriseUsers[i].id}) is included in configured denylist - Ignoring`
                 });
 
                 continue;
@@ -877,8 +877,8 @@ async function index() {
 }
 
 // Check for incompatible configurations
-if(config.whitelist.enabled && config.blacklist.enabled && config.blacklist.users) {
-    console.log('\n\n=============== WARNING ===============\nBlacklist users are ignored when both blacklist and whitelist are enabled together. Continuing automatically in 10 seconds...\n=======================================\n\n');
+if(config.allowlist.enabled && config.denylist.enabled && config.denylist.users) {
+    console.log('\n\n=============== WARNING ===============\nDenylist users are ignored when both denylist and allowlist are enabled together. Continuing automatically in 10 seconds...\n=======================================\n\n');
     setTimeout(function () {
         index();
     }, 10000)

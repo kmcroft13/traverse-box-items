@@ -1,5 +1,5 @@
 # Introduction #
-This script will traverse all items in a Box instance, and optionally allows for custom business logic (defined by the user) to be performed on each item retreived during traversal. Some additional features are offered which allow for more "advanced" capabilities such as a simulation mode to skip modifying data, a blacklist to skip processing of certain users or folders, and a whitelist to only process certain folders explicitly.
+This script will traverse all items in a Box instance, and optionally allows for custom business logic (defined by the user) to be performed on each item retreived during traversal. Some additional features are offered which allow for more "advanced" capabilities such as a simulation mode to skip modifying data, a denylist to skip processing of certain users or folders, and an allowlist to only process certain folders explicitly.
 
 ## Contents ##
 * [Getting Started](https://github.com/kmcroft13/traverse-box-items#getting-started)
@@ -49,20 +49,20 @@ All custom Business Logic must be defined within the user-defined-logic.js file,
     parentExecutionID [string]: The execution ID from the loop which triggered the function
 
 ## Process Non-Owned Items ##
-By default the script is configured to skip items not owned by the user associated with the calling Box API client. This prevents the script from processing duplicate items for collaborated folders. However, there may be cases where you want to process non-owned, collaborated items especially when used in conjunction with the whitelist feature to limit the scope of which items the script will process.
+By default the script is configured to skip items not owned by the user associated with the calling Box API client. This prevents the script from processing duplicate items for collaborated folders. However, there may be cases where you want to process non-owned, collaborated items especially when used in conjunction with the allowlist feature to limit the scope of which items the script will process.
 
 ## CSV ##
 Instead of iterating through all users, the script can be configured to pull a pre-defined set of items to process from a CSV file. The CSV requires 3 columns with one of the following headers each: `item_id` OR `Item ID` OR `Folder/File ID`, `owner_login` OR `Owner Login`, and `type` OR `Item Type` OR `Path`. Conveniently, the second of each of these headers match ones produced by some of Box's native reporting. This is useful if you already know the scope of the items you want to take action on (for example, by pulling a Shared Link or Folders and Files report from Box).
 
-## Blacklist ##
-The blacklist feature allows the user to configure specific users or folders to skip during processing. If these items are encountered during traversal, they will be skipped and no action will be performed. The item will be logged in runtime logs but will not be captured in audit event logs. The blacklist accepts an array of user IDs and / or an array of folder IDs.
+## Denylist ##
+The denylist feature allows the user to configure specific users or folders to skip during processing. If these items are encountered during traversal, they will be skipped and no action will be performed. The item will be logged in runtime logs but will not be captured in audit event logs. The denylist accepts an array of user IDs and / or an array of folder IDs.
 
-## Whitelist ##
-The whitelist feature allows the user to configure specific combinations of users and folders explicitly process. When the whitelist is enabled, no other items besides the ones explicitly configured will be processed. Items not included in the whitelist will not be processed and will not be included in the runtime logs or in audit event logs.
-The whitelist is an array of objects. Each object requires two elements: `ownerID` and `folderIDs`.
-* `ownerID` is a string representing the user ID for the user who owns the whitelisted folders.
-* `folderIDs` is an array of strings representing the folder IDs which should be processed in the whitelist. All folder IDs within this array must be owned by the `ownerID` user defined above.
-* `followAllChildItems` is a boolean which specifies whether or not the whitelist should apply to all child items throughout an entire structure, or if the whitelist should only apply to the specified item and its immediate children. In technical terms, controls whether or not recursion is performed.
+## Allowlist ##
+The allowlist feature allows the user to configure specific combinations of users and folders explicitly process. When the allowlist is enabled, no other items besides the ones explicitly configured will be processed. Items not included in the allowlist will not be processed and will not be included in the runtime logs or in audit event logs.
+The allowlist is an array of objects. Each object requires two elements: `ownerID` and `folderIDs`.
+* `ownerID` is a string representing the user ID for the user who owns the allowlisted folders.
+* `folderIDs` is an array of strings representing the folder IDs which should be processed in the allowlist. All folder IDs within this array must be owned by the `ownerID` user defined above.
+* `followAllChildItems` is a boolean which specifies whether or not the allowlist should apply to all child items throughout an entire structure, or if the allowlist should only apply to the specified item and its immediate children. In technical terms, controls whether or not recursion is performed.
 
 ## Simulation Mode ##
 If adding custom User Defined Business Logic, it is recommended to implement a "simulation mode" by leveraging the `modifyData` config flag. If the flag is `true` you can perform the actual action associated with your custom logic, while if the flag is `false` you can implement an audit log only version that does not actually modify any data. You can see a sample implementation in the example file.
@@ -110,16 +110,16 @@ _**NOTE**: The `boxAppSettings` object in the config is structured slightly diff
 * **csv** _[object]_: Container object for CSV configurations
     * **enabled** _[boolean]_: Whether or not the script should process items from a CSV file
     * **filePath** _[string]_: If CSV option enabled, the file path to the CSV file that should be used
-* **blacklist** _[object]_: Container object for blacklist configurations
-    * **enabled** _[boolean]_: Whether or not the blacklist should be honored at runtime
+* **denylist** _[object]_: Container object for denylist configurations
+    * **enabled** _[boolean]_: Whether or not the denylist should be honored at runtime
     * **users** _[array]_: Array of user IDs which should be ignored at runtime
     * **folders** _[array]_: Array of folder IDs which should be ignored at runtime
-* **whitelist** _[object]_: Container object for whitelist configurations
-    * **enabled** _[boolean]_: Whether or not the whitelist should be honored at runtime
-    * **items** _[array of objects]_: Array of objects which contains items to be included in whitelist.
-        * **ownerID** _[string]_: The user ID of the user who owns the folder to be included in whitelist.
-        * **folderIDs** _[array]_: Array of folder IDs which should be included in whitelist.
-        * **followAllChildItems** _[boolean]_: Whether or not the whitelist should apply to all child items through recursion (`true`) or if only the whitelisted item and its immediate children should be processed (`false`).
+* **allowlist** _[object]_: Container object for allowlist configurations
+    * **enabled** _[boolean]_: Whether or not the allowlist should be honored at runtime
+    * **items** _[array of objects]_: Array of objects which contains items to be included in allowlist.
+        * **ownerID** _[string]_: The user ID of the user who owns the folder to be included in allowlist.
+        * **folderIDs** _[array]_: Array of folder IDs which should be included in allowlist.
+        * **followAllChildItems** _[boolean]_: Whether or not the allowlist should apply to all child items through recursion (`true`) or if only the allowlisted item and its immediate children should be processed (`false`).
 * **userDefinedConfigs** _[object]_: Container object which can be used to store configurations needed in any custom User Defined Business Logic
 * **boxItemFields** _[string]_: The object fields which are returned with each API response. This should be modified sparingly as certain fields are relied upon by log functions. **Fields should not be removed from this list.**
 * **boxAppSettings** _[object]_: Container object for Box app configurations.
