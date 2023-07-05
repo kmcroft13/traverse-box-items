@@ -16,12 +16,12 @@
     "enabled": false,
     "filePath": ""
   },
-  "blacklist": {
+  "denylist": {
     "enabled": false,
     "users": [""],
     "folders": [""]
   },
-  "whitelist": {
+  "allowlist": {
     "enabled": false,
     "items": [
       {
